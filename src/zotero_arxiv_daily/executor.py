@@ -122,8 +122,9 @@ class Executor:
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             llm_kwargs = Paper._llm_generation_kwargs(self.config.llm)
             logger.info(f"Using LLM base_url={self.config.llm.api.base_url}, model={llm_kwargs.get('model')}")
-            logger.info("Generating TLDR and affiliations...")
+            logger.info("Generating translated titles, TLDR and affiliations...")
             for p in tqdm(reranked_papers):
+                p.generate_title_translation(self.openai_client, self.config.llm)
                 p.generate_tldr(self.openai_client, self.config.llm)
                 p.generate_affiliations(self.openai_client, self.config.llm)
         elif not self.config.executor.send_empty:

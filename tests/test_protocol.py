@@ -65,6 +65,29 @@ def test_tldr_truncates_long_prompt(llm_params):
     assert result is not None
 
 
+def test_title_translation_returns_chinese_title(llm_params):
+    captured = {}
+
+    def create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668")
+                )
+            ]
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    paper = make_sample_paper(title="A compact microwave filter for RF front ends")
+
+    result = paper.generate_title_translation(client, llm_params)
+
+    assert result == "\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668"
+    assert paper.title_zh == result
+    assert "Translate the following scientific paper title" in str(captured["messages"])
+
+
 def test_tldr_bilingual_prompt_requests_english_and_chinese(llm_params):
     captured = {}
     bilingual_tldr = f"English: Summary.\n{ZH_LABEL}: \u6458\u8981\u3002"
@@ -112,6 +135,11 @@ def test_wants_bilingual_tldr():
     assert wants_bilingual_tldr("English and Chinese")
     assert wants_bilingual_tldr("\u4e2d\u82f1\u6587")
     assert not wants_bilingual_tldr("Chinese")
+
+
+def test_contains_chinese():
+    assert contains_chinese("\u5c04\u9891\u524d\u7aef")
+    assert not contains_chinese("RF front-end")
 
 
 def test_llm_generation_kwargs_adapts_siliconflow_defaults():

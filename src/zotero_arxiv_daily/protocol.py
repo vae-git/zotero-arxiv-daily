@@ -28,7 +28,7 @@ def wants_bilingual_tldr(language: str) -> bool:
 
 
 def contains_chinese(text: str | None) -> bool:
-    return bool(re.search("[\\u4e00-\\u9fff]", text or ""))
+    return any("\u4e00" <= char <= "\u9fff" for char in (text or ""))
 
 @dataclass
 class Paper:
@@ -39,6 +39,7 @@ class Paper:
     url: str
     pdf_url: Optional[str] = None
     full_text: Optional[str] = None
+    title_zh: Optional[str] = None
     tldr: Optional[str] = None
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
@@ -173,6 +174,47 @@ class Paper:
         if self._has_bilingual_tldr(repaired_tldr):
             return repaired_tldr
         return current_tldr
+
+    @staticmethod
+    def _clean_title_translation(title: str) -> str:
+        title = (title or "").strip().strip('"').strip("'").strip()
+        title = re.sub(r"^(Chinese|Simplified Chinese|中文|题目|标题)\s*[:：]\s*", "", title, flags=re.IGNORECASE)
+        return title.strip()
+
+    def _generate_title_translation_with_llm(self, openai_client:OpenAI, llm_params:dict) -> str:
+        if not self.title:
+            return ""
+        if contains_chinese(self.title):
+            return self.title
+
+        prompt = (
+            "Translate the following scientific paper title into Simplified Chinese.\n"
+            "Return only the translated title. Do not add quotes, labels, explanations, or markdown.\n"
+            "Preserve technical acronyms, formulas, model names, journal abbreviations, and proper nouns when appropriate.\n\n"
+            f"Title:\n{self.title}"
+        )
+        response = openai_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You translate scientific paper titles accurately into concise Simplified Chinese.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            **self._llm_generation_kwargs(llm_params)
+        )
+        return self._clean_title_translation(response.choices[0].message.content)
+
+    def generate_title_translation(self, openai_client:OpenAI, llm_params:dict) -> Optional[str]:
+        try:
+            title_zh = self._generate_title_translation_with_llm(openai_client, llm_params)
+            self.title_zh = title_zh if contains_chinese(title_zh) else None
+            return self.title_zh
+        except Exception as e:
+            safe_error = self._safe_error_message(e)
+            logger.warning(f"Failed to translate title of {self.url}: {safe_error}")
+            self.title_zh = None
+            return None
     
     def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
         try:

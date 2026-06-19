@@ -57,7 +57,19 @@ def format_tldr_html(tldr: str | None) -> str:
     return escape(tldr or "").replace("\n", "<br>")
 
 
-def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affiliations:str=None):
+def format_title_html(title: str, title_zh: str | None = None) -> str:
+    title_html = escape(title or "")
+    if title_zh:
+        title_html += (
+            '<br><span style="font-size: 16px; font-weight: normal; color: #444;">'
+            f'{escape(title_zh)}'
+            '</span>'
+        )
+    return title_html
+
+
+def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affiliations:str=None, title_zh:str=None):
+    title = format_title_html(title, title_zh)
     tldr = format_tldr_html(tldr)
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
@@ -131,7 +143,7 @@ def render_email(papers:list[Paper]) -> str:
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        parts.append(get_block_html(p.title, authors, rate, p.tldr, p.pdf_url, affiliations))
+        parts.append(get_block_html(p.title, authors, rate, p.tldr, p.pdf_url, affiliations, p.title_zh))
 
     content = '<br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)

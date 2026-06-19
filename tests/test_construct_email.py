@@ -13,6 +13,13 @@ def test_render_email_with_papers():
     assert "MIT" in html
 
 
+def test_render_email_with_translated_title():
+    paper = make_sample_paper(title="RF front-end filter", title_zh="\u5c04\u9891\u524d\u7aef\u6ee4\u6ce2\u5668")
+    html = render_email([paper])
+    assert "RF front-end filter" in html
+    assert "\u5c04\u9891\u524d\u7aef\u6ee4\u6ce2\u5668" in html
+
+
 def test_render_email_preserves_tldr_line_breaks():
     tldr = f"English: Summary.\n{ZH_LABEL}: \u6458\u8981\u3002"
     papers = [make_sample_paper(score=7.5, tldr=tldr, affiliations=["MIT"])]
