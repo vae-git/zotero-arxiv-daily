@@ -96,6 +96,8 @@ source:
   arxiv:
     category: ["eess.SP","cs.IT","math.IT","eess.SY","physics.app-ph"]
     include_cross_list: true # Set to true to include arXiv cross-list papers in these categories.
+  rf_rss:
+    max_entries_per_feed: 5 # IEEE RF journal feeds: T-MTT, T-AP, MWTL, JSSC.
 
 reranker:
   top_k: 5
@@ -103,7 +105,7 @@ reranker:
 
 executor:
   debug: ${oc.env:DEBUG,null}
-  source: ['arxiv']
+  source: ['arxiv','rf_rss']
   max_paper_num: 20
 ```
 Set `source.arxiv.include_cross_list: true` if you want cross-listed papers included.

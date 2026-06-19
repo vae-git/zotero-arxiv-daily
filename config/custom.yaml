@@ -24,6 +24,8 @@ source:
   arxiv:
     category: ["eess.SP","cs.IT","math.IT","eess.SY","physics.app-ph"]
     include_cross_list: true
+  rf_rss:
+    max_entries_per_feed: 5
 
 reranker:
   top_k: 5
@@ -31,5 +33,5 @@ reranker:
 
 executor:
   debug: ${oc.env:DEBUG,null}
-  source: ['arxiv']
+  source: ['arxiv','rf_rss']
   max_paper_num: 20

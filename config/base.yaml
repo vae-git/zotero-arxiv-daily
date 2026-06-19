@@ -12,6 +12,13 @@ source:
     category: null # The categories of target biorxiv papers. Find categories from [here](https://www.biorxiv.org/). Example: ["biochemistry","animal behavior and cognition"]
   medrxiv:
     category: null # The categories of target medrxiv papers. Find categories from [here](https://www.medrxiv.org/) Example: ["psychiatry and clinical psychology", "neurology"]
+  rf_rss:
+    feeds:
+      T-MTT: https://ieeexplore.ieee.org/rss/TOC22.xml
+      T-AP: https://ieeexplore.ieee.org/rss/TOC8.xml
+      MWTL: https://ieeexplore.ieee.org/rss/TOC7260.xml
+      JSSC: https://ieeexplore.ieee.org/rss/TOC4.xml
+    max_entries_per_feed: 5
 
 email:
   sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com
