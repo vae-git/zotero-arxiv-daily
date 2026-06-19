@@ -3,7 +3,7 @@ from pyzotero import zotero
 from omegaconf import DictConfig, ListConfig
 from .utils import glob_match
 from .retriever import get_retriever_cls
-from .protocol import CorpusPaper, Paper
+from .protocol import CorpusPaper, Paper, normalize_llm_base_url
 import random
 from datetime import datetime
 from .reranker import get_reranker_cls
@@ -38,7 +38,13 @@ class Executor:
             source: get_retriever_cls(source)(config) for source in config.executor.source
         }
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
-        self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)
+        llm_base_url = normalize_llm_base_url(config.llm.api.base_url)
+        self.openai_client = OpenAI(
+            api_key=config.llm.api.key,
+            base_url=llm_base_url or None,
+            timeout=30,
+            max_retries=2,
+        )
     def fetch_zotero_corpus(self) -> list[CorpusPaper]:
         logger.info("Fetching zotero corpus")
         zot = zotero.Zotero(self.config.zotero.user_id, 'user', self.config.zotero.api_key)

@@ -21,10 +21,30 @@ jobs:
           RECEIVER: ${{ secrets.RECEIVER }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4o-mini' }}
+          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE || 'https://api.siliconflow.cn/v1' }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}
         run: |
           export DEBUG=true
+          OPENAI_API_BASE="${OPENAI_API_BASE%/}"
+          if [[ "$OPENAI_API_BASE" == *"siliconflow.cn"* && "$OPENAI_API_BASE" != */v1 ]]; then
+            export OPENAI_API_BASE="$OPENAI_API_BASE/v1"
+          fi
+          python - <<'PY'
+          import os
+          import urllib.error
+          import urllib.request
+
+          base_url = os.environ["OPENAI_API_BASE"].rstrip("/")
+          print(f"LLM base_url={base_url}")
+          print(f"LLM model={os.environ['OPENAI_MODEL']}")
+          try:
+              with urllib.request.urlopen(f"{base_url}/models", timeout=20) as response:
+                  print(f"LLM connectivity precheck: HTTP {response.status}")
+          except urllib.error.HTTPError as exc:
+              print(f"LLM connectivity precheck: HTTP {exc.code} (network reachable)")
+          except Exception as exc:
+              print(f"LLM connectivity precheck failed: {type(exc).__name__}: {exc}")
+          PY
           echo "Use checked-in config: "
           cat config/custom.yaml
           uv run src/zotero_arxiv_daily/main.py

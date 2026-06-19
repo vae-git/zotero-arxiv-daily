@@ -13,6 +13,13 @@ DEFAULT_TLDR_MAX_TOKENS = 512
 SILICONFLOW_DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 
+def normalize_llm_base_url(base_url: str | None) -> str:
+    base_url = str(base_url or "").strip().rstrip("/")
+    if "siliconflow.cn" in base_url and not base_url.endswith("/v1"):
+        base_url = f"{base_url}/v1"
+    return base_url
+
+
 def wants_bilingual_tldr(language: str) -> bool:
     language = str(language or "").lower()
     has_english = "english" in language or "\u82f1\u6587" in language or "\u82f1" in language
@@ -102,7 +109,7 @@ class Paper:
     def _llm_generation_kwargs(llm_params: dict) -> dict:
         kwargs = dict(Paper._config_get(llm_params, "generation_kwargs", {}) or {})
         api_config = Paper._config_get(llm_params, "api", {}) or {}
-        base_url = str(Paper._config_get(api_config, "base_url", "") or "").lower()
+        base_url = normalize_llm_base_url(Paper._config_get(api_config, "base_url", "")).lower()
 
         if kwargs.get("model") == "gpt-4o-mini" and "siliconflow" in base_url:
             kwargs["model"] = SILICONFLOW_DEFAULT_MODEL
@@ -127,6 +134,16 @@ class Paper:
         message = f"{type(exc).__name__}: {exc}"
         message = re.sub(r"(sk-[A-Za-z0-9_-]+)", "sk-***", message)
         return message[:240]
+
+    @staticmethod
+    def _chinese_error_hint(safe_error: str) -> str:
+        if "APIConnectionError" in safe_error:
+            return (
+                "\u65e0\u6cd5\u8fde\u63a5\u5230 LLM API\u3002"
+                "\u8bf7\u786e\u8ba4 OPENAI_API_BASE \u4e3a https://api.siliconflow.cn/v1\uff0c"
+                "\u5e76\u67e5\u770b Action \u65e5\u5fd7\u4e2d\u7684 LLM connectivity precheck\u3002"
+            )
+        return "\u4e2d\u6587\u6458\u8981\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 LLM \u914d\u7f6e\u6216\u8fd0\u884c\u65e5\u5fd7\u3002"
 
     def _repair_bilingual_tldr(self, openai_client:OpenAI, llm_params:dict, current_tldr:str) -> str:
         prompt = (
@@ -168,7 +185,7 @@ class Paper:
             if wants_bilingual_tldr(llm_params.get('language', 'English')):
                 tldr = (
                     f"English: {self.abstract}\n"
-                    f"{ZH_LABEL}: \u4e2d\u6587\u6458\u8981\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 LLM \u914d\u7f6e\u6216\u8fd0\u884c\u65e5\u5fd7\u3002 Error: {safe_error}"
+                    f"{ZH_LABEL}: {self._chinese_error_hint(safe_error)} Error: {safe_error}"
                 )
             else:
                 tldr = self.abstract

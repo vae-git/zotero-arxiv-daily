@@ -10,6 +10,7 @@ from zotero_arxiv_daily.protocol import (
     Paper,
     ZH_LABEL,
     contains_chinese,
+    normalize_llm_base_url,
     wants_bilingual_tldr,
 )
 
@@ -121,6 +122,11 @@ def test_llm_generation_kwargs_adapts_siliconflow_defaults():
 
     assert kwargs["model"] == SILICONFLOW_DEFAULT_MODEL
     assert kwargs["max_tokens"] == DEFAULT_TLDR_MAX_TOKENS
+
+
+def test_normalize_llm_base_url_adds_siliconflow_v1():
+    assert normalize_llm_base_url("https://api.siliconflow.cn") == "https://api.siliconflow.cn/v1"
+    assert normalize_llm_base_url("https://api.siliconflow.cn/v1") == "https://api.siliconflow.cn/v1"
 
 
 # ---------------------------------------------------------------------------

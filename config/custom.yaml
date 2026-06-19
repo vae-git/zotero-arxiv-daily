@@ -13,9 +13,9 @@ email:
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY}
-    base_url: ${oc.env:OPENAI_API_BASE}
+    base_url: ${oc.env:OPENAI_API_BASE,https://api.siliconflow.cn/v1}
   generation_kwargs:
-    model: ${oc.env:OPENAI_MODEL,gpt-4o-mini}
+    model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-7B-Instruct}
     max_tokens: 512
     temperature: 0.2
   language: English and Chinese
