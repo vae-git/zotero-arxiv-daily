@@ -1,5 +1,6 @@
 from .protocol import Paper
 import math
+from html import escape
 
 
 framework = """
@@ -52,7 +53,12 @@ def get_empty_html():
   """
   return block_template
 
+def format_tldr_html(tldr: str | None) -> str:
+    return escape(tldr or "").replace("\n", "<br>")
+
+
 def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affiliations:str=None):
+    tldr = format_tldr_html(tldr)
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
     <tr>

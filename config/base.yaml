@@ -28,9 +28,11 @@ llm:
   # Arguments for the LLM API. See [here](https://platform.openai.com/docs/api-reference/chat/create) for more details.
     max_tokens: 16384
     model: ???
-  language: English # Preferred language for the TL;DR. Example: English
+  language: English and Chinese # Preferred language for the TL;DR. Example: English, Chinese, or English and Chinese
 
 reranker:
+  top_k: 5 # Score each candidate against its top-k most similar Zotero papers. Set null or 0 to use the whole library.
+  nearest_weight: 0.7 # Weight of the single closest Zotero match in the final relevance score. Higher values make recommendations more focused.
   local:
     model: jinaai/jina-embeddings-v5-text-nano-retrieval # The Hugging Face model name of the local embedding model. Example: jinaai/jina-embeddings-v5-text-nano
     encode_kwargs:
@@ -46,6 +48,6 @@ reranker:
 executor:
   debug: false # Whether to use debug mode. Example: true
   send_empty: false # Whether to send an empty email even if no new papers today. Example: true
-  max_paper_num: 100 # The maximum number of the papers presented in the email. Example: 100
+  max_paper_num: 20 # The maximum number of the papers presented in the email. Example: 20
   source: ??? # The sources of papers to retrieve. Example: ['arxiv','biorxiv','medrxiv']
   reranker: local # The reranker to use. Example: 'local' or 'api'

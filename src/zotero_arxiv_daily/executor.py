@@ -45,7 +45,10 @@ class Executor:
         collections = zot.everything(zot.collections())
         collections = {c['key']:c for c in collections}
         corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
-        corpus = [c for c in corpus if c['data']['abstractNote'] != '']
+        corpus = [
+            c for c in corpus
+            if c['data'].get('title', '').strip() or c['data'].get('abstractNote', '').strip()
+        ]
         def get_collection_path(col_key:str) -> str:
             if p := collections[col_key]['data']['parentCollection']:
                 return get_collection_path(p) + '/' + collections[col_key]['data']['name']
@@ -56,8 +59,8 @@ class Executor:
             c['paths'] = paths
         logger.info(f"Fetched {len(corpus)} zotero papers")
         return [CorpusPaper(
-            title=c['data']['title'],
-            abstract=c['data']['abstractNote'],
+            title=c['data'].get('title', ''),
+            abstract=c['data'].get('abstractNote', ''),
             added_date=datetime.strptime(c['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'),
             paths=c['paths']
         ) for c in corpus]

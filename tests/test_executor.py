@@ -143,6 +143,39 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
     assert corpus[0].paths == []
 
 
+def test_fetch_zotero_corpus_keeps_title_only_papers(config, monkeypatch):
+    from tests.canned_responses import make_stub_zotero_client
+
+    items = [
+        {
+            "data": {
+                "title": "Title Only Paper",
+                "abstractNote": "",
+                "dateAdded": "2026-03-01T00:00:00Z",
+                "collections": [],
+            }
+        },
+        {
+            "data": {
+                "title": "",
+                "abstractNote": "",
+                "dateAdded": "2026-03-02T00:00:00Z",
+                "collections": [],
+            }
+        },
+    ]
+    stub_zot = make_stub_zotero_client(items=items)
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", lambda *a, **kw: stub_zot)
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+    corpus = executor.fetch_zotero_corpus()
+
+    assert len(corpus) == 1
+    assert corpus[0].title == "Title Only Paper"
+    assert corpus[0].abstract == ""
+
+
 # ---------------------------------------------------------------------------
 # E2E: Executor.run()
 # ---------------------------------------------------------------------------

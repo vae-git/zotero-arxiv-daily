@@ -1,8 +1,10 @@
 """Tests for zotero_arxiv_daily.protocol: Paper.generate_tldr, Paper.generate_affiliations."""
 
 import pytest
+from types import SimpleNamespace
 
 from tests.canned_responses import make_sample_paper, make_stub_openai_client
+from zotero_arxiv_daily.protocol import ZH_LABEL, contains_chinese, wants_bilingual_tldr
 
 
 @pytest.fixture()
@@ -53,6 +55,55 @@ def test_tldr_truncates_long_prompt(llm_params):
     paper = make_sample_paper(full_text="word " * 10000)
     result = paper.generate_tldr(client, llm_params)
     assert result is not None
+
+
+def test_tldr_bilingual_prompt_requests_english_and_chinese(llm_params):
+    captured = {}
+    bilingual_tldr = f"English: Summary.\n{ZH_LABEL}: \u6458\u8981\u3002"
+
+    def create(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=bilingual_tldr))]
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    llm_params["language"] = "English and Chinese"
+    paper = make_sample_paper()
+
+    result = paper.generate_tldr(client, llm_params)
+
+    assert result == bilingual_tldr
+    request = str(captured["messages"])
+    assert "English:" in request
+    assert f"{ZH_LABEL}:" in request
+
+
+def test_tldr_bilingual_prompt_repairs_english_only_answer(llm_params):
+    responses = [
+        "English: Summary only.",
+        f"English: Summary.\n{ZH_LABEL}: \u6458\u8981\u3002",
+    ]
+
+    def create(**kwargs):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=responses.pop(0)))]
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    llm_params["language"] = "English and Chinese"
+    paper = make_sample_paper()
+
+    result = paper.generate_tldr(client, llm_params)
+
+    assert f"{ZH_LABEL}:" in result
+    assert contains_chinese(result)
+
+
+def test_wants_bilingual_tldr():
+    assert wants_bilingual_tldr("English and Chinese")
+    assert wants_bilingual_tldr("\u4e2d\u82f1\u6587")
+    assert not wants_bilingual_tldr("Chinese")
 
 
 # ---------------------------------------------------------------------------

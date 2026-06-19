@@ -16,11 +16,17 @@ llm:
     base_url: ${oc.env:OPENAI_API_BASE}
   generation_kwargs:
     model: gpt-4o-mini
+  language: English and Chinese
 
 source:
   arxiv:
     category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
 
+reranker:
+  top_k: 5
+  nearest_weight: 0.7
+
 executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv']
+  max_paper_num: 20

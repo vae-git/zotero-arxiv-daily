@@ -1,6 +1,7 @@
 """Tests for zotero_arxiv_daily.construct_email: render_email, get_stars, get_block_html."""
 
 from zotero_arxiv_daily.construct_email import render_email, get_stars, get_block_html, get_empty_html
+from zotero_arxiv_daily.protocol import ZH_LABEL
 from tests.canned_responses import make_sample_paper
 
 
@@ -10,6 +11,13 @@ def test_render_email_with_papers():
     assert "Sample Paper Title" in html
     assert "A great paper." in html
     assert "MIT" in html
+
+
+def test_render_email_preserves_tldr_line_breaks():
+    tldr = f"English: Summary.\n{ZH_LABEL}: \u6458\u8981\u3002"
+    papers = [make_sample_paper(score=7.5, tldr=tldr, affiliations=["MIT"])]
+    html = render_email(papers)
+    assert f"English: Summary.<br>{ZH_LABEL}: \u6458\u8981\u3002" in html
 
 
 def test_render_email_empty_list():
