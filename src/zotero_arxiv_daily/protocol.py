@@ -122,6 +122,12 @@ class Paper:
     def _has_bilingual_tldr(tldr: str | None) -> bool:
         return bool(tldr and "English:" in tldr and f"{ZH_LABEL}:" in tldr and contains_chinese(tldr))
 
+    @staticmethod
+    def _safe_error_message(exc: Exception) -> str:
+        message = f"{type(exc).__name__}: {exc}"
+        message = re.sub(r"(sk-[A-Za-z0-9_-]+)", "sk-***", message)
+        return message[:240]
+
     def _repair_bilingual_tldr(self, openai_client:OpenAI, llm_params:dict, current_tldr:str) -> str:
         prompt = (
             "The previous answer did not follow the required bilingual format.\n"
@@ -157,11 +163,12 @@ class Paper:
             self.tldr = tldr
             return tldr
         except Exception as e:
-            logger.warning(f"Failed to generate tldr of {self.url}: {e}")
+            safe_error = self._safe_error_message(e)
+            logger.warning(f"Failed to generate tldr of {self.url}: {safe_error}")
             if wants_bilingual_tldr(llm_params.get('language', 'English')):
                 tldr = (
                     f"English: {self.abstract}\n"
-                    f"{ZH_LABEL}: \u4e2d\u6587\u6458\u8981\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 LLM \u914d\u7f6e\u6216\u8fd0\u884c\u65e5\u5fd7\u3002"
+                    f"{ZH_LABEL}: \u4e2d\u6587\u6458\u8981\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 LLM \u914d\u7f6e\u6216\u8fd0\u884c\u65e5\u5fd7\u3002 Error: {safe_error}"
                 )
             else:
                 tldr = self.abstract

@@ -95,8 +95,8 @@ llm:
 
 source:
   arxiv:
-    category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
-    include_cross_list: false # Set to true to include arXiv cross-list papers in these categories.
+    category: ["eess.SP","cs.IT","math.IT","eess.SY","physics.app-ph"]
+    include_cross_list: true # Set to true to include arXiv cross-list papers in these categories.
 
 reranker:
   top_k: 5

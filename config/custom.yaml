@@ -22,7 +22,8 @@ llm:
 
 source:
   arxiv:
-    category: ["cs.AI","cs.CV","cs.LG","cs.CL"]
+    category: ["eess.SP","cs.IT","math.IT","eess.SY","physics.app-ph"]
+    include_cross_list: true
 
 reranker:
   top_k: 5
