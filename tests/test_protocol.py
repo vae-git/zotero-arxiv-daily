@@ -4,7 +4,14 @@ import pytest
 from types import SimpleNamespace
 
 from tests.canned_responses import make_sample_paper, make_stub_openai_client
-from zotero_arxiv_daily.protocol import ZH_LABEL, contains_chinese, wants_bilingual_tldr
+from zotero_arxiv_daily.protocol import (
+    DEFAULT_TLDR_MAX_TOKENS,
+    SILICONFLOW_DEFAULT_MODEL,
+    Paper,
+    ZH_LABEL,
+    contains_chinese,
+    wants_bilingual_tldr,
+)
 
 
 @pytest.fixture()
@@ -104,6 +111,16 @@ def test_wants_bilingual_tldr():
     assert wants_bilingual_tldr("English and Chinese")
     assert wants_bilingual_tldr("\u4e2d\u82f1\u6587")
     assert not wants_bilingual_tldr("Chinese")
+
+
+def test_llm_generation_kwargs_adapts_siliconflow_defaults():
+    kwargs = Paper._llm_generation_kwargs({
+        "api": {"base_url": "https://api.siliconflow.cn/v1"},
+        "generation_kwargs": {"model": "gpt-4o-mini", "max_tokens": 16384},
+    })
+
+    assert kwargs["model"] == SILICONFLOW_DEFAULT_MODEL
+    assert kwargs["max_tokens"] == DEFAULT_TLDR_MAX_TOKENS
 
 
 # ---------------------------------------------------------------------------

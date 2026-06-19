@@ -67,6 +67,7 @@ Below are all the secrets you need to set. They are invisible to anyone includin
 | RECEIVER | The e-mail address that receives the paper list. | abc@outlook.com |
 | OPENAI_API_KEY | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
 | OPENAI_API_BASE | API URL when using the API to access LLMs. | https://api.siliconflow.cn/v1 |
+| OPENAI_MODEL | Optional model name for your OpenAI-compatible API. | Qwen/Qwen2.5-7B-Instruct |
 
 Then edit `config/custom.yaml` in your fork and commit the change. The GitHub Action reads this checked-in file directly:
 ```yaml
@@ -87,7 +88,9 @@ llm:
     key: ${oc.env:OPENAI_API_KEY}
     base_url: ${oc.env:OPENAI_API_BASE}
   generation_kwargs:
-    model: gpt-4o-mini
+    model: ${oc.env:OPENAI_MODEL,gpt-4o-mini}
+    max_tokens: 512
+    temperature: 0.2
   language: English and Chinese
 
 source:
@@ -137,7 +140,7 @@ llm:
     base_url: ??? # API URL of your LLM API. Example: https://api.openai.com/v1
   generation_kwargs:
   # Arguments for the LLM API. See [here](https://platform.openai.com/docs/api-reference/chat/create) for more details.
-    max_tokens: 16384
+    max_tokens: 512
     model: ???
   language: English and Chinese # Preferred language for the TL;DR. Example: English, Chinese, or English and Chinese
 

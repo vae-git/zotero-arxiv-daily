@@ -9,6 +9,8 @@ import json
 RawPaperItem = TypeVar('RawPaperItem')
 
 ZH_LABEL = "\u4e2d\u6587"
+DEFAULT_TLDR_MAX_TOKENS = 512
+SILICONFLOW_DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 
 def wants_bilingual_tldr(language: str) -> bool:
@@ -72,7 +74,7 @@ class Paper:
                 },
                 {"role": "user", "content": prompt},
             ],
-            **llm_params.get('generation_kwargs', {})
+            **self._llm_generation_kwargs(llm_params)
         )
         tldr = response.choices[0].message.content
         if wants_bilingual_tldr(lang) and not self._has_bilingual_tldr(tldr):
@@ -87,6 +89,34 @@ class Paper:
                 "Answer with exactly two lines: one English TLDR line and one Simplified Chinese TLDR line."
             )
         return f"You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user. Your answer should be in {language}."
+
+    @staticmethod
+    def _config_get(config, key: str, default=None):
+        if config is None:
+            return default
+        if hasattr(config, "get"):
+            return config.get(key, default)
+        return getattr(config, key, default)
+
+    @staticmethod
+    def _llm_generation_kwargs(llm_params: dict) -> dict:
+        kwargs = dict(Paper._config_get(llm_params, "generation_kwargs", {}) or {})
+        api_config = Paper._config_get(llm_params, "api", {}) or {}
+        base_url = str(Paper._config_get(api_config, "base_url", "") or "").lower()
+
+        if kwargs.get("model") == "gpt-4o-mini" and "siliconflow" in base_url:
+            kwargs["model"] = SILICONFLOW_DEFAULT_MODEL
+
+        try:
+            max_tokens = int(kwargs.get("max_tokens", DEFAULT_TLDR_MAX_TOKENS))
+        except (TypeError, ValueError):
+            max_tokens = DEFAULT_TLDR_MAX_TOKENS
+        if max_tokens > DEFAULT_TLDR_MAX_TOKENS:
+            kwargs["max_tokens"] = DEFAULT_TLDR_MAX_TOKENS
+        else:
+            kwargs["max_tokens"] = max_tokens
+
+        return kwargs
 
     @staticmethod
     def _has_bilingual_tldr(tldr: str | None) -> bool:
@@ -105,13 +135,17 @@ class Paper:
             prompt += f"Abstract:\n{self.abstract}\n\n"
         prompt += f"Previous answer:\n{current_tldr}\n"
 
-        response = openai_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": self._tldr_system_prompt("English and Chinese")},
-                {"role": "user", "content": prompt},
-            ],
-            **llm_params.get('generation_kwargs', {})
-        )
+        try:
+            response = openai_client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": self._tldr_system_prompt("English and Chinese")},
+                    {"role": "user", "content": prompt},
+                ],
+                **self._llm_generation_kwargs(llm_params)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to repair bilingual tldr of {self.url}: {e}")
+            return current_tldr
         repaired_tldr = response.choices[0].message.content
         if self._has_bilingual_tldr(repaired_tldr):
             return repaired_tldr
@@ -150,7 +184,7 @@ class Paper:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                **llm_params.get('generation_kwargs', {})
+                **self._llm_generation_kwargs(llm_params)
             )
             affiliations = affiliations.choices[0].message.content
 
