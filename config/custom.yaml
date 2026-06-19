@@ -13,7 +13,7 @@ email:
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY}
-    base_url: ${oc.env:OPENAI_API_BASE,https://api.siliconflow.cn/v1}
+    base_url: https://api.siliconflow.cn/v1
   generation_kwargs:
     model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-7B-Instruct}
     max_tokens: 512

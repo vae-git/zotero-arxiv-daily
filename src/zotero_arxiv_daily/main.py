@@ -8,6 +8,10 @@ import dotenv
 from zotero_arxiv_daily.executor import Executor
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 dotenv.load_dotenv()
+if not os.environ.get("OPENAI_API_KEY") and os.environ.get("SILICONFLOW_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.environ["SILICONFLOW_API_KEY"]
+if not os.environ.get("OPENAI_MODEL") and os.environ.get("SILICONFLOW_MODEL"):
+    os.environ["OPENAI_MODEL"] = os.environ["SILICONFLOW_MODEL"]
 
 @hydra.main(version_base=None, config_path="../../config", config_name="default")
 def main(config:DictConfig):

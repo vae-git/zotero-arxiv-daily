@@ -20,9 +20,9 @@ jobs:
           SENDER: ${{ secrets.SENDER }}
           RECEIVER: ${{ secrets.RECEIVER }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE || 'https://api.siliconflow.cn/v1' }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}
+          OPENAI_API_KEY: ${{ secrets.SILICONFLOW_API_KEY || secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: https://api.siliconflow.cn/v1
+          OPENAI_MODEL: ${{ vars.SILICONFLOW_MODEL || vars.OPENAI_MODEL || 'Qwen/Qwen2.5-7B-Instruct' }}
         run: |
           export DEBUG=true
           OPENAI_API_BASE="${OPENAI_API_BASE%/}"

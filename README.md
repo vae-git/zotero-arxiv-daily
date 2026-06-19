@@ -65,9 +65,8 @@ Below are all the secrets you need to set. They are invisible to anyone includin
 | SENDER | The email account of the SMTP server that sends you email. | abc@qq.com |
 | SENDER_PASSWORD | The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this.   | abcdefghijklmn |
 | RECEIVER | The e-mail address that receives the paper list. | abc@outlook.com |
-| OPENAI_API_KEY | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
-| OPENAI_API_BASE | API URL when using the API to access LLMs. | https://api.siliconflow.cn/v1 |
-| OPENAI_MODEL | Optional model name for your OpenAI-compatible API. | Qwen/Qwen2.5-7B-Instruct |
+| SILICONFLOW_API_KEY or OPENAI_API_KEY | SiliconFlow API key. `SILICONFLOW_API_KEY` is preferred; `OPENAI_API_KEY` is also supported. | sk-xxx |
+| SILICONFLOW_MODEL or OPENAI_MODEL | Optional SiliconFlow model name. | Qwen/Qwen2.5-7B-Instruct |
 
 Then edit `config/custom.yaml` in your fork and commit the change. The GitHub Action reads this checked-in file directly:
 ```yaml
@@ -86,7 +85,7 @@ email:
 llm:
   api:
     key: ${oc.env:OPENAI_API_KEY}
-    base_url: ${oc.env:OPENAI_API_BASE,https://api.siliconflow.cn/v1}
+    base_url: https://api.siliconflow.cn/v1
   generation_kwargs:
     model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-7B-Instruct}
     max_tokens: 512
