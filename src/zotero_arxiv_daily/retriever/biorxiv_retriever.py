@@ -4,6 +4,7 @@ from ..protocol import Paper
 from loguru import logger
 from typing import Any
 from time import sleep
+from .date_utils import format_published_date
 
 @register_retriever("biorxiv")
 class BiorxivRetriever(BaseRetriever):
@@ -57,5 +58,6 @@ class BiorxivRetriever(BaseRetriever):
             abstract=abstract,
             url=pdf_url,
             pdf_url=pdf_url,
-            full_text=full_text
+            full_text=full_text,
+            published_date=format_published_date(raw_paper.get("date")),
         )

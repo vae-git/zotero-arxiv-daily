@@ -3,6 +3,7 @@ import arxiv
 from arxiv import Result as ArxivResult
 from ..protocol import Paper
 from ..utils import extract_markdown_from_pdf, extract_tex_code_from_tar
+from .date_utils import format_published_date
 from tempfile import TemporaryDirectory
 import feedparser
 from tqdm import tqdm
@@ -174,6 +175,7 @@ class ArxivRetriever(BaseRetriever):
             url=raw_paper.entry_id,
             pdf_url=pdf_url,
             full_text=full_text,
+            published_date=format_published_date(getattr(raw_paper, "published", None)),
         )
 
 

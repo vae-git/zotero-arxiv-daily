@@ -13,6 +13,7 @@ def test_rf_rss_retriever(config, monkeypatch):
             "link": "https://ieeexplore.ieee.org/document/1",
             "summary": "A microwave filter design for RF systems.",
             "authors": [{"name": "Author A"}],
+            "published": "Fri, 20 Jun 2026 12:30:00 GMT",
         }
     ]
     parsed_feed = SimpleNamespace(entries=entries, bozo=False)
@@ -32,6 +33,7 @@ def test_rf_rss_retriever(config, monkeypatch):
     assert papers[0].title.startswith("[T-MTT]")
     assert "microwave filter" in papers[0].abstract
     assert papers[0].authors == ["Author A"]
+    assert papers[0].published_date == "2026-06-20"
 
 
 def test_rf_rss_retriever_registered():

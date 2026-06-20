@@ -5,6 +5,7 @@ from loguru import logger
 
 from ..protocol import Paper
 from .base import BaseRetriever, register_retriever
+from .date_utils import format_published_date
 
 
 DEFAULT_RF_RSS_FEEDS = {
@@ -50,6 +51,12 @@ class RfRssRetriever(BaseRetriever):
             return None
 
         abstract = summary or f"Latest {journal} RF/microwave journal paper: {title}"
+        published_date = (
+            format_published_date(entry.get("published"))
+            or format_published_date(entry.get("updated"))
+            or format_published_date(entry.get("published_parsed"))
+            or format_published_date(entry.get("updated_parsed"))
+        )
         return Paper(
             source=self.name,
             title=f"[{journal}] {title}",
@@ -58,4 +65,5 @@ class RfRssRetriever(BaseRetriever):
             url=url,
             pdf_url=url,
             full_text=None,
+            published_date=published_date,
         )
