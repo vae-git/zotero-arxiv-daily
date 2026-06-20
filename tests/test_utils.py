@@ -154,6 +154,32 @@ def test_send_email_falls_back_to_ssl(config, monkeypatch):
     assert len(sent) == 1
 
 
+def test_send_email_uses_ssl_first_for_port_465(config, monkeypatch):
+    sent = []
+    calls = []
+
+    from omegaconf import open_dict
+
+    with open_dict(config):
+        config.email.smtp_port = 465
+
+    class StubSMTPUnexpected:
+        def __init__(self, *a, **kw):
+            calls.append("smtp")
+            raise AssertionError("port 465 should use SMTP_SSL first")
+
+    class StubSMTPSSL(make_stub_smtp(sent)):
+        def __init__(self, *a, **kw):
+            calls.append(("ssl", kw.get("timeout")))
+
+    monkeypatch.setattr(smtplib, "SMTP", StubSMTPUnexpected)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", StubSMTPSSL)
+    send_email(config, "<html>ssl-first</html>")
+
+    assert len(sent) == 1
+    assert calls == [("ssl", 30)]
+
+
 def test_send_email_falls_back_to_plain(config, monkeypatch):
     sent = []
     call_count = {"smtp": 0}

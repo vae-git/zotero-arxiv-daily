@@ -87,4 +87,5 @@ reranker:
 executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv','rf_rss']
+  send_empty: true
   max_paper_num: 12
