@@ -30,8 +30,61 @@ source:
 reranker:
   top_k: 5
   nearest_weight: 0.7
+  focus:
+    enabled: true
+    primary_keywords:
+      - "rf power amplifier"
+      - "radio frequency power amplifier"
+      - "microwave power amplifier"
+      - "mm-wave power amplifier"
+      - "millimeter-wave power amplifier"
+      - "power amplifier"
+      - "power amplifiers"
+      - "pa"
+      - "digital predistortion"
+      - "predistortion"
+      - "dpd"
+      - "linearization"
+      - "doherty"
+      - "load modulation"
+      - "envelope tracking"
+      - "outphasing"
+    secondary_keywords:
+      - "gan"
+      - "gaas"
+      - "cmos"
+      - "bicmos"
+      - "rf front-end"
+      - "transmitter"
+      - "mmwave"
+      - "millimeter wave"
+      - "microwave"
+      - "efficiency"
+      - "linearity"
+      - "pae"
+      - "aclr"
+      - "back-off"
+      - "backoff"
+    ai_keywords:
+      - "artificial intelligence"
+      - "machine learning"
+      - "deep learning"
+      - "neural network"
+      - "reinforcement learning"
+      - "bayesian optimization"
+      - "data-driven"
+      - "surrogate model"
+      - "transformer"
+      - "graph neural network"
+      - "physics-informed"
+    primary_boost_per_match: 0.14
+    secondary_boost_per_match: 0.05
+    ai_combo_boost: 0.45
+    max_boost: 1.0
+    no_primary_penalty: 0.35
+    drop_without_primary: true
 
 executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv','rf_rss']
-  max_paper_num: 20
+  max_paper_num: 12

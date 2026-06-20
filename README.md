@@ -102,11 +102,14 @@ source:
 reranker:
   top_k: 5
   nearest_weight: 0.7
+  focus:
+    enabled: true
+    drop_without_primary: true # Only keep RF power amplifier / DPD / Doherty / linearization related papers.
 
 executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv','rf_rss']
-  max_paper_num: 20
+  max_paper_num: 12
 ```
 Set `source.arxiv.include_cross_list: true` if you want cross-listed papers included.
 >[!NOTE]
@@ -148,6 +151,17 @@ llm:
 reranker:
   top_k: 5 # Score each candidate against its top-k most similar Zotero papers. Set null or 0 to use the whole library.
   nearest_weight: 0.7 # Weight of the single closest Zotero match in the final relevance score. Higher values make recommendations more focused.
+  focus:
+    enabled: false # Set true to strongly focus ranking on a domain keyword profile.
+    primary_keywords: []
+    secondary_keywords: []
+    ai_keywords: []
+    primary_boost_per_match: 0.12
+    secondary_boost_per_match: 0.04
+    ai_combo_boost: 0.35
+    max_boost: 0.9
+    no_primary_penalty: 0.35
+    drop_without_primary: false
   local:
     model: jinaai/jina-embeddings-v5-text-nano # The Hugging Face model name of the local embedding model. Example: jinaai/jina-embeddings-v5-text-nano
     encode_kwargs:
@@ -195,7 +209,7 @@ This project is in active development. You can subscribe this repo via `Watch` s
 
 
 ## 📖 How it works
-*Zotero-arXiv-Daily* firstly retrieves all papers in your Zotero library with either a title or an abstract, and all papers released in the previous day, via corresponding API. Then it calculates the embedding of each paper's title and abstract via an embedding model. The score of a paper combines its closest Zotero match and its weighted average similarity over the top-k most similar Zotero papers (newer paper added to the library has higher weight). The paper title is translated into Simplified Chinese, and the TLDR is generated in English and Chinese by LLM, given the text extracted by pymupdf4llm.
+*Zotero-arXiv-Daily* firstly retrieves all papers in your Zotero library with either a title or an abstract, and all papers released in the previous day, via corresponding API. Then it calculates the embedding of each paper's title and abstract via an embedding model. The score of a paper combines its closest Zotero match and its weighted average similarity over the top-k most similar Zotero papers (newer paper added to the library has higher weight). A focus reranker can then boost papers matching RF power amplifier topics and AI-for-power-amplifier topics, and optionally drop papers without primary power-amplifier keywords. The paper title is translated into Simplified Chinese, and the TLDR is generated in English and Chinese by LLM, given the text extracted by pymupdf4llm.
 
 ## 📌 Limitations
 - The recommendation algorithm is very simple, it may not accurately reflect your interest. Welcome better ideas for improving the algorithm!

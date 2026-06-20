@@ -3,10 +3,16 @@ from omegaconf import DictConfig
 from ..protocol import Paper, CorpusPaper
 import numpy as np
 from typing import Type
+import re
 
 
 DEFAULT_TOP_K = 5
 DEFAULT_NEAREST_WEIGHT = 0.7
+DEFAULT_FOCUS_PRIMARY_BOOST = 0.12
+DEFAULT_FOCUS_SECONDARY_BOOST = 0.04
+DEFAULT_FOCUS_AI_COMBO_BOOST = 0.35
+DEFAULT_FOCUS_MAX_BOOST = 0.9
+DEFAULT_FOCUS_NO_PRIMARY_PENALTY = 0.35
 
 
 class BaseReranker(ABC):
@@ -24,9 +30,68 @@ class BaseReranker(ABC):
         assert sim.shape == (len(candidates), len(corpus))
         scores = self._aggregate_scores(sim, time_decay_weight) * 10 # [n_candidate]
         for s,c in zip(scores,candidates):
-            c.score = s
+            c.score = s * self._focus_multiplier(c)
+        candidates = self._filter_by_focus(candidates)
         candidates = sorted(candidates,key=lambda x: x.score,reverse=True)
         return candidates
+
+    def _filter_by_focus(self, candidates: list[Paper]) -> list[Paper]:
+        focus_config = self._get_reranker_config_value("focus")
+        if (
+            not focus_config
+            or self._focus_config_get(focus_config, "enabled", False) is False
+            or not self._focus_config_get(focus_config, "drop_without_primary", False)
+        ):
+            return candidates
+        return [c for c in candidates if self._primary_focus_matches(c) > 0]
+
+    def _focus_multiplier(self, paper: Paper) -> float:
+        focus_config = self._get_reranker_config_value("focus")
+        if not focus_config or self._focus_config_get(focus_config, "enabled", False) is False:
+            return 1.0
+
+        text = self._candidate_text(paper).lower()
+        primary_matches = self._primary_focus_matches(paper, focus_config)
+        secondary_matches = self._count_term_matches(text, self._focus_config_get(focus_config, "secondary_keywords", []))
+        ai_matches = self._count_term_matches(text, self._focus_config_get(focus_config, "ai_keywords", []))
+
+        if primary_matches == 0:
+            return float(self._focus_config_get(focus_config, "no_primary_penalty", DEFAULT_FOCUS_NO_PRIMARY_PENALTY))
+
+        boost = (
+            primary_matches * float(self._focus_config_get(focus_config, "primary_boost_per_match", DEFAULT_FOCUS_PRIMARY_BOOST))
+            + secondary_matches * float(self._focus_config_get(focus_config, "secondary_boost_per_match", DEFAULT_FOCUS_SECONDARY_BOOST))
+        )
+        if ai_matches > 0:
+            boost += float(self._focus_config_get(focus_config, "ai_combo_boost", DEFAULT_FOCUS_AI_COMBO_BOOST))
+        max_boost = float(self._focus_config_get(focus_config, "max_boost", DEFAULT_FOCUS_MAX_BOOST))
+        return 1.0 + min(boost, max_boost)
+
+    def _primary_focus_matches(self, paper: Paper, focus_config=None) -> int:
+        focus_config = focus_config or self._get_reranker_config_value("focus")
+        if not focus_config:
+            return 0
+        text = self._candidate_text(paper).lower()
+        return self._count_term_matches(text, self._focus_config_get(focus_config, "primary_keywords", []))
+
+    @staticmethod
+    def _focus_config_get(config, key: str, default=None):
+        if hasattr(config, "get"):
+            return config.get(key, default)
+        return getattr(config, key, default)
+
+    @classmethod
+    def _count_term_matches(cls, text: str, terms) -> int:
+        return sum(1 for term in terms if cls._term_matches(text, str(term).lower()))
+
+    @staticmethod
+    def _term_matches(text: str, term: str) -> bool:
+        term = term.strip()
+        if not term:
+            return False
+        if len(term) <= 3 and re.fullmatch(r"[a-z0-9]+", term):
+            return bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text))
+        return term in text
 
     def _aggregate_scores(self, sim: np.ndarray, time_decay_weight: np.ndarray) -> np.ndarray:
         top_k = self._get_top_k(sim.shape[1])

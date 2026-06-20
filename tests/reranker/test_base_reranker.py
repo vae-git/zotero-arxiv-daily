@@ -103,6 +103,63 @@ def test_rerank_top_k_prefers_strong_nearest_match():
     assert ranked[0].score > ranked[1].score
 
 
+def test_rerank_focus_boosts_ai_power_amplifier_papers():
+    corpus = make_sample_corpus(2)
+    papers = [
+        make_sample_paper(
+            title="Generic microwave antenna design",
+            abstract="This paper studies an antenna for wireless systems.",
+        ),
+        make_sample_paper(
+            title="Deep learning digital predistortion for RF power amplifiers",
+            abstract="A neural network improves PA linearization and efficiency.",
+        ),
+    ]
+    config = SimpleNamespace(reranker={
+        "top_k": 2,
+        "nearest_weight": 0.7,
+        "focus": {
+            "enabled": True,
+            "primary_keywords": ["power amplifier", "digital predistortion", "pa"],
+            "secondary_keywords": ["efficiency", "linearization"],
+            "ai_keywords": ["deep learning", "neural network"],
+            "drop_without_primary": False,
+        },
+    })
+
+    sim = np.array([
+        [0.6, 0.6],
+        [0.6, 0.6],
+    ])
+    reranker = StubReranker(sim, config=config)
+    ranked = reranker.rerank(papers, corpus)
+
+    assert ranked[0].title == "Deep learning digital predistortion for RF power amplifiers"
+    assert ranked[0].score > ranked[1].score
+
+
+def test_rerank_focus_can_drop_non_power_amplifier_papers():
+    corpus = make_sample_corpus(1)
+    papers = [
+        make_sample_paper(title="Generic microwave antenna design", abstract="Wireless antenna study."),
+        make_sample_paper(title="Doherty power amplifier linearization", abstract="A PA efficiency method."),
+    ]
+    config = SimpleNamespace(reranker={
+        "top_k": 1,
+        "focus": {
+            "enabled": True,
+            "primary_keywords": ["power amplifier", "doherty", "pa"],
+            "drop_without_primary": True,
+        },
+    })
+
+    sim = np.array([[0.9], [0.5]])
+    reranker = StubReranker(sim, config=config)
+    ranked = reranker.rerank(papers, corpus)
+
+    assert [p.title for p in ranked] == ["Doherty power amplifier linearization"]
+
+
 def test_get_reranker_cls_unknown():
     with pytest.raises(ValueError, match="not found"):
         get_reranker_cls("nonexistent_reranker_xyz")
