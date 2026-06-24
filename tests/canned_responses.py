@@ -12,6 +12,8 @@ from zotero_arxiv_daily.protocol import CorpusPaper, Paper
 
 _AFFILIATION_MARKER = "You are an assistant who perfectly extracts affiliations"
 _AFFILIATION_RESPONSE = '["TsingHua University","Peking University"]'
+_TITLE_TRANSLATION_MARKER = "Translate the following scientific paper title"
+_TITLE_TRANSLATION_RESPONSE = "\u6837\u4f8b\u8bba\u6587\u6807\u9898"
 _TLDR_RESPONSE = "Hello! How can I assist you today?"
 
 
@@ -36,6 +38,8 @@ def _stub_chat_create(**kwargs):
     request_str = str(messages)
     if _AFFILIATION_MARKER in request_str:
         return _make_chat_response(_AFFILIATION_RESPONSE)
+    if _TITLE_TRANSLATION_MARKER in request_str:
+        return _make_chat_response(_TITLE_TRANSLATION_RESPONSE)
     return _make_chat_response(_TLDR_RESPONSE)
 
 

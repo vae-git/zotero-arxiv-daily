@@ -9,6 +9,7 @@ import json
 RawPaperItem = TypeVar('RawPaperItem')
 
 ZH_LABEL = "\u4e2d\u6587"
+TITLE_ZH_FAILURE = "\u4e2d\u6587\u6807\u9898\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 LLM \u914d\u7f6e\u6216\u8fd0\u884c\u65e5\u5fd7\u3002"
 DEFAULT_TLDR_MAX_TOKENS = 512
 SILICONFLOW_DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
@@ -178,9 +179,18 @@ class Paper:
 
     @staticmethod
     def _clean_title_translation(title: str) -> str:
-        title = (title or "").strip().strip('"').strip("'").strip()
-        title = re.sub(r"^(Chinese|Simplified Chinese|中文|题目|标题)\s*[:：]\s*", "", title, flags=re.IGNORECASE)
-        return title.strip()
+        title = (title or "").strip().strip("`").strip().strip('"').strip("'").strip()
+        lines = [line.strip().strip("-*").strip() for line in title.splitlines() if line.strip()]
+        if lines:
+            chinese_lines = [line for line in lines if contains_chinese(line)]
+            title = chinese_lines[0] if chinese_lines else lines[0]
+        label_pattern = (
+            "^(?:Chinese|Simplified Chinese|Chinese title|Translated title|Translation|"
+            "\u4e2d\u6587|\u4e2d\u6587\u6807\u9898|\u6807\u9898|\u8bd1\u6587|\u7ffb\u8bd1)"
+            "\\s*[:\uff1a]\\s*"
+        )
+        title = re.sub(label_pattern, "", title, flags=re.IGNORECASE)
+        return title.strip().strip('"').strip("'").strip()
 
     def _generate_title_translation_with_llm(self, openai_client:OpenAI, llm_params:dict) -> str:
         if not self.title:
@@ -190,7 +200,8 @@ class Paper:
 
         prompt = (
             "Translate the following scientific paper title into Simplified Chinese.\n"
-            "Return only the translated title. Do not add quotes, labels, explanations, or markdown.\n"
+            "Return only the translated title in Simplified Chinese. The answer must contain Chinese characters.\n"
+            "Do not add quotes, labels, explanations, or markdown.\n"
             "Preserve technical acronyms, formulas, model names, journal abbreviations, and proper nouns when appropriate.\n\n"
             f"Title:\n{self.title}"
         )
@@ -198,7 +209,31 @@ class Paper:
             messages=[
                 {
                     "role": "system",
-                    "content": "You translate scientific paper titles accurately into concise Simplified Chinese.",
+                    "content": (
+                        "You translate scientific paper titles accurately into concise Simplified Chinese. "
+                        "Return only the Chinese title."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            **self._llm_generation_kwargs(llm_params)
+        )
+        return self._clean_title_translation(response.choices[0].message.content)
+
+    def _repair_title_translation(self, openai_client:OpenAI, llm_params:dict, current_answer:str) -> str:
+        prompt = (
+            "The previous answer did not produce a Simplified Chinese paper title.\n"
+            "Translate the title below into Simplified Chinese now.\n"
+            "Return only the translated Chinese title, with no labels, quotes, explanations, or markdown.\n"
+            "Preserve technical acronyms, formulas, model names, journal abbreviations, and proper nouns when appropriate.\n\n"
+            f"Title:\n{self.title}\n\n"
+            f"Previous answer:\n{current_answer}"
+        )
+        response = openai_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You must answer with only a Simplified Chinese scientific paper title.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -209,12 +244,14 @@ class Paper:
     def generate_title_translation(self, openai_client:OpenAI, llm_params:dict) -> Optional[str]:
         try:
             title_zh = self._generate_title_translation_with_llm(openai_client, llm_params)
-            self.title_zh = title_zh if contains_chinese(title_zh) else None
+            if not contains_chinese(title_zh):
+                title_zh = self._repair_title_translation(openai_client, llm_params, title_zh)
+            self.title_zh = title_zh if contains_chinese(title_zh) else TITLE_ZH_FAILURE
             return self.title_zh
         except Exception as e:
             safe_error = self._safe_error_message(e)
             logger.warning(f"Failed to translate title of {self.url}: {safe_error}")
-            self.title_zh = None
+            self.title_zh = f"{TITLE_ZH_FAILURE} Error: {safe_error}"
             return None
     
     def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:

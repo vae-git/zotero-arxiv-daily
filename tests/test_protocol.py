@@ -8,6 +8,7 @@ from zotero_arxiv_daily.protocol import (
     DEFAULT_TLDR_MAX_TOKENS,
     SILICONFLOW_DEFAULT_MODEL,
     Paper,
+    TITLE_ZH_FAILURE,
     ZH_LABEL,
     contains_chinese,
     normalize_llm_base_url,
@@ -86,6 +87,58 @@ def test_title_translation_returns_chinese_title(llm_params):
     assert result == "\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668"
     assert paper.title_zh == result
     assert "Translate the following scientific paper title" in str(captured["messages"])
+
+
+def test_title_translation_strips_chinese_label(llm_params):
+    def create(**kwargs):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="\u4e2d\u6587\u6807\u9898\uff1a\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668")
+                )
+            ]
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    paper = make_sample_paper(title="A compact microwave filter for RF front ends")
+
+    result = paper.generate_title_translation(client, llm_params)
+
+    assert result == "\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668"
+
+
+def test_title_translation_repairs_non_chinese_answer(llm_params):
+    responses = [
+        "A compact microwave filter for RF front ends",
+        "\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668",
+    ]
+
+    def create(**kwargs):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=responses.pop(0)))]
+        )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    paper = make_sample_paper(title="A compact microwave filter for RF front ends")
+
+    result = paper.generate_title_translation(client, llm_params)
+
+    assert result == "\u7528\u4e8e\u5c04\u9891\u524d\u7aef\u7684\u7d27\u51d1\u578b\u5fae\u6ce2\u6ee4\u6ce2\u5668"
+    assert paper.title_zh == result
+
+
+def test_title_translation_error_is_visible_in_email_title(llm_params):
+    broken_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kw: (_ for _ in ()).throw(RuntimeError("API down")))
+        )
+    )
+    paper = make_sample_paper(title="A compact microwave filter for RF front ends")
+
+    result = paper.generate_title_translation(broken_client, llm_params)
+
+    assert result is None
+    assert TITLE_ZH_FAILURE in paper.title_zh
 
 
 def test_tldr_bilingual_prompt_requests_english_and_chinese(llm_params):
