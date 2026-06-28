@@ -12,6 +12,10 @@ def test_render_email_with_papers():
             tldr="A great paper.",
             affiliations=["MIT"],
             published_date="2026-06-20",
+            venue="IEEE Transactions on Microwave Theory and Techniques",
+            venue_rank="Top RF/microwave journal",
+            cas_partition="\u4e2d\u79d1\u9662 2 \u533a",
+            sci_quartile="JCR Q1",
         )
     ]
     html = render_email(papers)
@@ -20,6 +24,14 @@ def test_render_email_with_papers():
     assert "MIT" in html
     assert "Published / 发表时间:" in html
     assert "2026-06-20" in html
+    assert "Venue / \u6765\u6e90:" in html
+    assert "IEEE Transactions on Microwave Theory and Techniques" in html
+    assert "Tier / \u7b49\u7ea7:" in html
+    assert "Top RF/microwave journal" in html
+    assert "CAS / \u4e2d\u79d1\u9662\u5206\u533a:" in html
+    assert "\u4e2d\u79d1\u9662 2 \u533a" in html
+    assert "SCI / JCR\u5206\u533a:" in html
+    assert "JCR Q1" in html
 
 
 def test_render_email_with_translated_title():
@@ -88,7 +100,19 @@ def test_get_stars_mid_score():
 
 
 def test_get_block_html_contains_all_fields():
-    html = get_block_html("Title", "Auth", "3.5", "Summary", "http://pdf.url", "MIT", published_date="2026-06-20")
+    html = get_block_html(
+        "Title",
+        "Auth",
+        "3.5",
+        "Summary",
+        "http://pdf.url",
+        "MIT",
+        published_date="2026-06-20",
+        venue="arXiv:eess.SP",
+        venue_rank="Preprint",
+        cas_partition="N/A",
+        sci_quartile="N/A",
+    )
     assert "Title" in html
     assert "Auth" in html
     assert "3.5" in html
@@ -96,6 +120,13 @@ def test_get_block_html_contains_all_fields():
     assert "http://pdf.url" in html
     assert "MIT" in html
     assert "2026-06-20" in html
+    assert "arXiv:eess.SP" in html
+    assert "Preprint" in html
+    assert "Venue / \u6765\u6e90:" in html
+    assert "Tier / \u7b49\u7ea7:" in html
+    assert "CAS / \u4e2d\u79d1\u9662\u5206\u533a:" in html
+    assert "SCI / JCR\u5206\u533a:" in html
+    assert "N/A" in html
 
 
 def test_get_empty_html():

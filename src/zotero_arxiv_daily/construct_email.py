@@ -77,10 +77,18 @@ def get_block_html(
     affiliations: str = None,
     title_zh: str = None,
     published_date: str = None,
+    venue: str = None,
+    venue_rank: str = None,
+    cas_partition: str = None,
+    sci_quartile: str = None,
 ):
     title = format_title_html(title, title_zh)
     tldr = format_tldr_html(tldr)
     published_date = escape(published_date or "Unknown")
+    venue = escape(venue or "Unknown")
+    venue_rank = escape(venue_rank or "Unknown")
+    cas_partition = escape(cas_partition or "Unknown")
+    sci_quartile = escape(sci_quartile or "Unknown")
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
     <tr>
@@ -95,6 +103,14 @@ def get_block_html(
             <i>{affiliations}</i>
             <br>
             <strong>Published / 发表时间:</strong> {published_date}
+            <br>
+            <strong>Venue / \u6765\u6e90:</strong> {venue}
+            <br>
+            <strong>Tier / \u7b49\u7ea7:</strong> {venue_rank}
+            <br>
+            <strong>CAS / \u4e2d\u79d1\u9662\u5206\u533a:</strong> {cas_partition}
+            <br>
+            <strong>SCI / JCR\u5206\u533a:</strong> {sci_quartile}
         </td>
     </tr>
     <tr>
@@ -123,6 +139,10 @@ def get_block_html(
         pdf_url=pdf_url,
         affiliations=affiliations,
         published_date=published_date,
+        venue=venue,
+        venue_rank=venue_rank,
+        cas_partition=cas_partition,
+        sci_quartile=sci_quartile,
     )
 
 def get_stars(score:float):
@@ -173,6 +193,10 @@ def render_email(papers:list[Paper]) -> str:
                 affiliations,
                 p.title_zh,
                 p.published_date,
+                p.venue,
+                p.venue_rank,
+                p.cas_partition,
+                p.sci_quartile,
             )
         )
 

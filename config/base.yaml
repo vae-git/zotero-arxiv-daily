@@ -19,6 +19,27 @@ source:
       MWTL: https://ieeexplore.ieee.org/rss/TOC7260.xml
       JSSC: https://ieeexplore.ieee.org/rss/TOC4.xml
     max_entries_per_feed: 5
+    venue_info:
+      T-MTT:
+        venue: IEEE Transactions on Microwave Theory and Techniques
+        rank: "Top RF/microwave journal / \u5c04\u9891\u5fae\u6ce2\u9886\u57df\u9876\u7ea7\u671f\u520a"
+        cas_partition: "\u4e2d\u79d1\u9662 2 \u533a\uff08\u5de5\u7a0b\u6280\u672f\uff0c\u9ed8\u8ba4\u53c2\u8003\uff09"
+        sci_quartile: "JCR Q1 / SCI \u4e00\u533a"
+      T-AP:
+        venue: IEEE Transactions on Antennas and Propagation
+        rank: "Top antennas/propagation journal / \u5929\u7ebf\u4e0e\u4f20\u64ad\u9886\u57df\u9876\u7ea7\u671f\u520a"
+        cas_partition: "\u4e2d\u79d1\u9662 2 \u533a\uff08\u5de5\u7a0b\u6280\u672f\uff0c\u9ed8\u8ba4\u53c2\u8003\uff09"
+        sci_quartile: "JCR Q1 / SCI \u4e00\u533a"
+      MWTL:
+        venue: IEEE Microwave and Wireless Technology Letters
+        rank: "IEEE RF/microwave letters journal / IEEE \u5c04\u9891\u5fae\u6ce2\u5feb\u62a5\u671f\u520a"
+        cas_partition: "\u4e2d\u79d1\u9662 3 \u533a\uff08\u5de5\u7a0b\u6280\u672f\uff0c\u9ed8\u8ba4\u53c2\u8003\uff09"
+        sci_quartile: "JCR Q2 / SCI \u4e8c\u533a"
+      JSSC:
+        venue: IEEE Journal of Solid-State Circuits
+        rank: "Top integrated circuits journal / \u96c6\u6210\u7535\u8def\u9886\u57df\u9876\u7ea7\u671f\u520a"
+        cas_partition: "\u4e2d\u79d1\u9662 1 \u533a\uff08\u5de5\u7a0b\u6280\u672f\uff0c\u9ed8\u8ba4\u53c2\u8003\uff09"
+        sci_quartile: "JCR Q1 / SCI \u4e00\u533a"
 
 email:
   sender: ??? # The email account of the SMTP server that sends you email. Example: abc@qq.com

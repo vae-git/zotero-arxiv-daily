@@ -45,6 +45,10 @@ class Paper:
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
     published_date: Optional[str] = None
+    venue: Optional[str] = None
+    venue_rank: Optional[str] = None
+    cas_partition: Optional[str] = None
+    sci_quartile: Optional[str] = None
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')

@@ -50,6 +50,10 @@ def test_biorxiv_convert_to_paper(config):
     assert "biorxiv.org" in paper.pdf_url
     assert paper.authors == ["Smith, J.", "Doe, A.", "Lee, K."]
     assert paper.published_date == "2026-03-02"
+    assert paper.venue == "biorxiv"
+    assert "Preprint" in paper.venue_rank
+    assert "N/A" in paper.cas_partition
+    assert "N/A" in paper.sci_quartile
 
 
 def test_biorxiv_requires_category(config):

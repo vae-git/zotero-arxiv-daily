@@ -167,6 +167,7 @@ class ArxivRetriever(BaseRetriever):
             full_text = extract_text_from_html(raw_paper)
         if full_text is None:
             full_text = extract_text_from_pdf(raw_paper)
+        primary_category = getattr(raw_paper, "primary_category", None)
         return Paper(
             source=self.name,
             title=title,
@@ -176,6 +177,10 @@ class ArxivRetriever(BaseRetriever):
             pdf_url=pdf_url,
             full_text=full_text,
             published_date=format_published_date(getattr(raw_paper, "published", None)),
+            venue=f"arXiv:{primary_category}" if primary_category else "arXiv",
+            venue_rank="Preprint / \u9884\u5370\u672c\uff08\u672a\u6807\u6ce8\u671f\u520a\u5206\u533a\uff09",
+            cas_partition="N/A / \u9884\u5370\u672c\u4e0d\u9002\u7528",
+            sci_quartile="N/A / \u9884\u5370\u672c\u4e0d\u9002\u7528",
         )
 
 

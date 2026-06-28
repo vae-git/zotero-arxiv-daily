@@ -34,6 +34,10 @@ def test_rf_rss_retriever(config, monkeypatch):
     assert "microwave filter" in papers[0].abstract
     assert papers[0].authors == ["Author A"]
     assert papers[0].published_date == "2026-06-20"
+    assert papers[0].venue == "IEEE Transactions on Microwave Theory and Techniques"
+    assert "Top RF/microwave journal" in papers[0].venue_rank
+    assert "\u4e2d\u79d1\u9662 2 \u533a" in papers[0].cas_partition
+    assert "JCR Q1" in papers[0].sci_quartile
 
 
 def test_rf_rss_retriever_registered():

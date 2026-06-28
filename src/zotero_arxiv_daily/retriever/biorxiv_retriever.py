@@ -60,4 +60,8 @@ class BiorxivRetriever(BaseRetriever):
             pdf_url=pdf_url,
             full_text=full_text,
             published_date=format_published_date(raw_paper.get("date")),
+            venue=self.server,
+            venue_rank="Preprint / \u9884\u5370\u672c\uff08\u672a\u6807\u6ce8\u671f\u520a\u5206\u533a\uff09",
+            cas_partition="N/A / \u9884\u5370\u672c\u4e0d\u9002\u7528",
+            sci_quartile="N/A / \u9884\u5370\u672c\u4e0d\u9002\u7528",
         )
