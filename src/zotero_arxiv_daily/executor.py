@@ -108,7 +108,11 @@ class Executor:
         all_papers = []
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
-            papers = retriever.retrieve_papers()
+            try:
+                papers = retriever.retrieve_papers()
+            except Exception as exc:
+                logger.exception(f"Failed to retrieve {source} papers; skip this source and continue: {exc}")
+                continue
             if len(papers) == 0:
                 logger.info(f"No {source} papers found")
                 continue
@@ -118,7 +122,11 @@ class Executor:
         reranked_papers = []
         if len(all_papers) > 0:
             logger.info("Reranking papers...")
-            reranked_papers = self.reranker.rerank(all_papers, corpus)
+            try:
+                reranked_papers = self.reranker.rerank(all_papers, corpus)
+            except Exception as exc:
+                logger.exception(f"Reranking failed; send unranked retrieved papers instead: {exc}")
+                reranked_papers = all_papers
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             llm_kwargs = Paper._llm_generation_kwargs(self.config.llm)
             logger.info(f"Using LLM base_url={self.config.llm.api.base_url}, model={llm_kwargs.get('model')}")
