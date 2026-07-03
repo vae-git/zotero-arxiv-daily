@@ -25,7 +25,7 @@ source:
     category: ["eess.SP","cs.IT","math.IT","eess.SY","physics.app-ph"]
     include_cross_list: true
   rf_rss:
-    max_entries_per_feed: 5
+    max_entries_per_feed: 20
 
 reranker:
   top_k: 5
@@ -89,3 +89,8 @@ executor:
   source: ['arxiv','rf_rss']
   send_empty: true
   max_paper_num: 12
+  source_quotas:
+    rf_rss:
+      min: 4
+      max: 6
+      require_focus_match: true

@@ -406,3 +406,51 @@ def test_run_reranker_failure_sends_unranked_papers(config, monkeypatch):
     assert len(sent) == 1, "Email should still be sent when reranking fails"
     _, _, body = sent[0]
     assert "text/html" in body
+
+
+def test_apply_source_quotas_keeps_rf_rss_papers(config):
+    """RF journal papers should keep reserved slots when they match the focus."""
+    from omegaconf import open_dict
+
+    from tests.canned_responses import make_sample_paper
+
+    with open_dict(config):
+        config.executor.max_paper_num = 5
+        config.executor.source_quotas = {
+            "rf_rss": {"min": 2, "max": 3, "require_focus_match": True},
+        }
+        config.reranker.focus.primary_keywords = ["power amplifier"]
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+
+    arxiv_1 = make_sample_paper(source="arxiv", title="Highly related arXiv paper", score=9.8)
+    arxiv_2 = make_sample_paper(source="arxiv", title="Another arXiv paper", score=9.7)
+    rf_1 = make_sample_paper(
+        source="rf_rss",
+        title="Doherty RF power amplifier in T-MTT",
+        abstract="A power amplifier design.",
+        score=6.0,
+    )
+    rf_2 = make_sample_paper(
+        source="rf_rss",
+        title="Digital predistortion for power amplifiers",
+        abstract="A DPD method for RF power amplifier linearization.",
+        score=5.5,
+    )
+    rf_3 = make_sample_paper(
+        source="rf_rss",
+        title="AI assisted RF power amplifier design",
+        abstract="A machine learning method for RF power amplifier design.",
+        score=5.0,
+    )
+    rf_non_focus = make_sample_paper(source="rf_rss", title="Microwave filter", abstract="A filter.", score=8.0)
+
+    selected = executor._apply_source_quotas(
+        ranked_papers=[arxiv_1, arxiv_2, rf_non_focus, rf_1, rf_2, rf_3],
+        all_papers=[arxiv_1, arxiv_2, rf_1, rf_2, rf_3, rf_non_focus],
+    )
+
+    assert selected[:3] == [rf_1, rf_2, rf_3]
+    assert len(selected) == 5
+    assert rf_non_focus not in selected[:3]

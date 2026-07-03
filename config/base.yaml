@@ -18,6 +18,23 @@ source:
       T-AP: https://ieeexplore.ieee.org/rss/TOC8.xml
       MWTL: https://ieeexplore.ieee.org/rss/TOC7260.xml
       JSSC: https://ieeexplore.ieee.org/rss/TOC4.xml
+    crossref_issn:
+      T-MTT: "0018-9480"
+      T-AP: "0018-926X"
+      MWTL: "2771-957X"
+      JSSC: "0018-9200"
+    crossref_queries:
+      - "RF power amplifier"
+      - "power amplifier"
+      - "digital predistortion"
+      - "Doherty"
+      - "linearization"
+      - "envelope tracking"
+      - "outphasing"
+      - "machine learning power amplifier"
+      - "neural network power amplifier"
+      - "power amplifier behavior modeling"
+    max_crossref_query_entries: 3
     max_entries_per_feed: 5
     venue_info:
       T-MTT:

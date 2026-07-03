@@ -6,6 +6,7 @@ from .retriever import get_retriever_cls
 from .protocol import CorpusPaper, Paper, normalize_llm_base_url
 import random
 from datetime import datetime
+import re
 from .reranker import get_reranker_cls
 from .construct_email import render_email
 from .utils import send_email
@@ -27,6 +28,23 @@ def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key:
         raise TypeError(f"config.zotero.{config_key} must contain only glob pattern strings.")
 
     return list(patterns)
+
+
+def _config_get(config, key: str, default=None):
+    if config is None:
+        return default
+    if hasattr(config, "get"):
+        return config.get(key, default)
+    return getattr(config, key, default)
+
+
+def _term_matches(text: str, term: str) -> bool:
+    term = str(term or "").strip().lower()
+    if not term:
+        return False
+    if len(term) <= 3 and re.fullmatch(r"[a-z0-9]+", term):
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text))
+    return term in text
 
 
 class Executor:
@@ -98,6 +116,60 @@ class Executor:
             logger.info(f"Selected {len(corpus)} zotero papers:\n{samples}\n...")
         return corpus
 
+    def _paper_focus_match_count(self, paper: Paper) -> int:
+        focus_config = _config_get(self.config.reranker, "focus", {}) or {}
+        primary_keywords = _config_get(focus_config, "primary_keywords", []) or []
+        text = "\n".join([paper.title or "", paper.abstract or ""]).lower()
+        return sum(1 for term in primary_keywords if _term_matches(text, term))
+
+    def _source_quota_candidates(self, source: str, papers: list[Paper], quota_config) -> list[Paper]:
+        require_focus_match = bool(_config_get(quota_config, "require_focus_match", True))
+        candidates = [p for p in papers if p.source == source]
+        if require_focus_match:
+            candidates = [p for p in candidates if self._paper_focus_match_count(p) > 0]
+        return sorted(
+            candidates,
+            key=lambda p: (
+                p.score if p.score is not None else -1.0,
+                p.published_date or "",
+            ),
+            reverse=True,
+        )
+
+    def _apply_source_quotas(self, ranked_papers: list[Paper], all_papers: list[Paper]) -> list[Paper]:
+        source_quotas = _config_get(self.config.executor, "source_quotas", {}) or {}
+        if not source_quotas:
+            return ranked_papers
+
+        max_paper_num = int(self.config.executor.max_paper_num)
+        selected: list[Paper] = []
+        selected_ids: set[int] = set()
+
+        def add_paper(paper: Paper) -> bool:
+            paper_id = id(paper)
+            if paper_id in selected_ids or len(selected) >= max_paper_num:
+                return False
+            selected.append(paper)
+            selected_ids.add(paper_id)
+            return True
+
+        for source, quota_config in dict(source_quotas).items():
+            min_count = int(_config_get(quota_config, "min", 0) or 0)
+            max_count = int(_config_get(quota_config, "max", min_count) or min_count)
+            if min_count <= 0 and max_count <= 0:
+                continue
+            source_selected = 0
+            for paper in self._source_quota_candidates(source, all_papers, quota_config):
+                if source_selected >= max_count:
+                    break
+                if add_paper(paper):
+                    source_selected += 1
+            logger.info(f"Source quota {source}: selected {source_selected} papers (min={min_count}, max={max_count})")
+
+        for paper in ranked_papers:
+            add_paper(paper)
+        return selected
+
     
     def run(self):
         corpus = self.fetch_zotero_corpus()
@@ -127,6 +199,7 @@ class Executor:
             except Exception as exc:
                 logger.exception(f"Reranking failed; send unranked retrieved papers instead: {exc}")
                 reranked_papers = all_papers
+            reranked_papers = self._apply_source_quotas(reranked_papers, all_papers)
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
             llm_kwargs = Paper._llm_generation_kwargs(self.config.llm)
             logger.info(f"Using LLM base_url={self.config.llm.api.base_url}, model={llm_kwargs.get('model')}")

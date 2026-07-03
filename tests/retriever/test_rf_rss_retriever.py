@@ -40,5 +40,56 @@ def test_rf_rss_retriever(config, monkeypatch):
     assert "JCR Q1" in papers[0].sci_quartile
 
 
+def test_rf_rss_retriever_crossref_fallback(config, monkeypatch):
+    parsed_feed = SimpleNamespace(entries=[], bozo=False)
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.rf_rss_retriever.feedparser.parse", lambda _: parsed_feed)
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.base.sleep", lambda _: None)
+
+    class StubResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "message": {
+                    "items": [
+                        {
+                            "title": ["Table of Contents"],
+                            "URL": "https://doi.org/10.1109/toc",
+                            "DOI": "10.1109/toc",
+                            "published-online": {"date-parts": [[2026, 7, 2]]},
+                        },
+                        {
+                            "title": ["A Broadband RF Power Amplifier With Digital Predistortion"],
+                            "URL": "https://doi.org/10.1109/example",
+                            "DOI": "10.1109/example",
+                            "author": [{"given": "Author", "family": "A"}],
+                            "abstract": "<jats:p>A power amplifier paper.</jats:p>",
+                            "published-online": {"date-parts": [[2026, 7, 1]]},
+                        }
+                    ]
+                }
+            }
+
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.rf_rss_retriever.requests.get", lambda *a, **kw: StubResponse())
+
+    with open_dict(config.source):
+        config.source.rf_rss = {
+            "feeds": {"T-MTT": "https://example.com/rss.xml"},
+            "crossref_issn": {"T-MTT": "0018-9480"},
+            "max_entries_per_feed": 1,
+        }
+
+    retriever = RfRssRetriever(config)
+    papers = retriever.retrieve_papers()
+
+    assert len(papers) == 1
+    assert papers[0].title.startswith("[T-MTT]")
+    assert "RF Power Amplifier" in papers[0].title
+    assert papers[0].authors == ["Author A"]
+    assert papers[0].published_date == "2026-07-01"
+    assert "power amplifier paper" in papers[0].abstract
+
+
 def test_rf_rss_retriever_registered():
     assert get_retriever_cls("rf_rss") is RfRssRetriever
