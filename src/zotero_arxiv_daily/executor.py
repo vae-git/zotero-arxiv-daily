@@ -85,16 +85,18 @@ def _extract_doi(value: str | None) -> str | None:
 
 
 def _paper_identifier_keys(paper: Paper) -> list[str]:
-    keys: list[str] = []
+    doi_keys: list[str] = []
+    arxiv_keys: list[str] = []
+    url_keys: list[str] = []
 
-    def add_key(key: str | None):
+    def add_key(keys: list[str], key: str | None):
         if key and key not in keys:
             keys.append(key)
 
     for value in (paper.url, paper.pdf_url):
         doi = _extract_doi(value)
         if doi:
-            add_key(f"doi:{doi}")
+            add_key(doi_keys, f"doi:{doi}")
             continue
 
         value = str(value or "").strip()
@@ -105,15 +107,17 @@ def _paper_identifier_keys(paper: Paper) -> list[str]:
         if "arxiv.org" in parsed.netloc.lower():
             arxiv_match = ARXIV_ID_RE.search(normalized_path)
             if arxiv_match:
-                add_key(f"arxiv:{arxiv_match.group(1).lower()}")
+                add_key(arxiv_keys, f"arxiv:{arxiv_match.group(1).lower()}")
                 continue
         normalized_url = parsed._replace(query="", fragment="", path=normalized_path).geturl().lower()
-        add_key(f"url:{normalized_url}")
+        add_key(url_keys, f"url:{normalized_url}")
+
+    keys = doi_keys or arxiv_keys or url_keys
 
     title_key = _normalize_title_for_history(paper.title)
     if title_key:
         title_hash = hashlib.sha1(title_key.encode("utf-8")).hexdigest()[:20]
-        add_key(f"title:{title_hash}")
+        add_key(keys, f"title:{title_hash}")
     return keys
 
 

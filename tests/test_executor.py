@@ -2,12 +2,21 @@
 
 import json
 from datetime import datetime
+from email import message_from_string
 
 import pytest
 from omegaconf import OmegaConf
 
 from zotero_arxiv_daily.executor import Executor, _paper_identifier_keys, normalize_path_patterns
 from zotero_arxiv_daily.protocol import CorpusPaper
+
+
+def _decode_email_body(raw_email: str) -> str:
+    message = message_from_string(raw_email)
+    payload = message.get_payload(decode=True)
+    if payload is None:
+        return raw_email
+    return payload.decode(message.get_content_charset() or "utf-8", errors="replace")
 
 
 # ---------------------------------------------------------------------------
@@ -570,8 +579,9 @@ def test_run_skips_sent_history_and_records_new_papers(config, monkeypatch, tmp_
 
     assert len(sent) == 1
     _, _, email_body = sent[0]
-    assert "Fresh RF Power Amplifier" in email_body
-    assert "Already Sent RF Power Amplifier" not in email_body
+    decoded_body = _decode_email_body(email_body)
+    assert "Fresh RF Power Amplifier" in decoded_body
+    assert "Already Sent RF Power Amplifier" not in decoded_body
 
     history = json.loads(history_path.read_text(encoding="utf-8"))
     assert any(entry["title"] == "Fresh RF Power Amplifier" for entry in history["entries"])
