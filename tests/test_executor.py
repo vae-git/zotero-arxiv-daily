@@ -1,11 +1,12 @@
 """Tests for zotero_arxiv_daily.executor: normalize_path_patterns, filter_corpus, fetch_zotero_corpus, E2E."""
 
+import json
 from datetime import datetime
 
 import pytest
 from omegaconf import OmegaConf
 
-from zotero_arxiv_daily.executor import Executor, normalize_path_patterns
+from zotero_arxiv_daily.executor import Executor, _paper_identifier_keys, normalize_path_patterns
 from zotero_arxiv_daily.protocol import CorpusPaper
 
 
@@ -454,3 +455,123 @@ def test_apply_source_quotas_keeps_rf_rss_papers(config):
     assert selected[:3] == [rf_1, rf_2, rf_3]
     assert len(selected) == 5
     assert rf_non_focus not in selected[:3]
+
+
+def test_sent_history_filters_previous_and_same_run_duplicates(config, tmp_path):
+    from omegaconf import open_dict
+
+    from tests.canned_responses import make_sample_paper
+
+    history_path = tmp_path / "sent_history.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "title": "Already sent",
+                        "keys": ["doi:10.1109/tmtt.2026.1234567"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with open_dict(config):
+        config.executor.sent_history = {
+            "enabled": True,
+            "path": str(history_path),
+            "max_items": 20,
+        }
+
+    executor = Executor.__new__(Executor)
+    executor.config = config
+
+    already_sent = make_sample_paper(
+        title="Already Sent RF Power Amplifier",
+        url="https://doi.org/10.1109/TMTT.2026.1234567?utm_source=email",
+    )
+    arxiv_once = make_sample_paper(
+        title="Fresh arXiv RF Power Amplifier",
+        url="https://arxiv.org/abs/2607.01234v1",
+        pdf_url="https://arxiv.org/pdf/2607.01234v1",
+    )
+    arxiv_duplicate = make_sample_paper(
+        title="Fresh arXiv RF Power Amplifier",
+        url="https://arxiv.org/pdf/2607.01234v2",
+        pdf_url="https://arxiv.org/pdf/2607.01234v2",
+    )
+    new_paper = make_sample_paper(
+        title="Fresh Doherty RF Power Amplifier",
+        url="https://doi.org/10.1109/TMTT.2026.7654321",
+    )
+
+    filtered = executor._filter_sent_papers([already_sent, arxiv_once, arxiv_duplicate, new_paper])
+
+    assert filtered == [arxiv_once, new_paper]
+
+
+def test_run_skips_sent_history_and_records_new_papers(config, monkeypatch, tmp_path):
+    import smtplib
+
+    from omegaconf import open_dict
+
+    from tests.canned_responses import (
+        make_sample_paper,
+        make_stub_openai_client,
+        make_stub_smtp,
+        make_stub_zotero_client,
+    )
+
+    history_path = tmp_path / "sent_history.json"
+    old_paper = make_sample_paper(
+        title="Already Sent RF Power Amplifier",
+        url="https://doi.org/10.1109/TMTT.2026.1111111",
+    )
+    new_paper = make_sample_paper(
+        title="Fresh RF Power Amplifier",
+        url="https://doi.org/10.1109/TMTT.2026.2222222",
+    )
+    history_path.write_text(
+        json.dumps({"entries": [{"title": old_paper.title, "keys": _paper_identifier_keys(old_paper)}]}),
+        encoding="utf-8",
+    )
+
+    with open_dict(config):
+        config.executor.source = ["arxiv"]
+        config.executor.reranker = "api"
+        config.executor.send_empty = False
+        config.executor.max_paper_num = 2
+        config.executor.sent_history = {
+            "enabled": True,
+            "path": str(history_path),
+            "max_items": 20,
+        }
+
+    stub_zot = make_stub_zotero_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.zotero.Zotero", lambda *a, **kw: stub_zot)
+
+    stub_client = make_stub_openai_client()
+    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", lambda **kw: stub_client)
+    monkeypatch.setattr("zotero_arxiv_daily.reranker.api.OpenAI", lambda **kw: stub_client)
+
+    import zotero_arxiv_daily.retriever.arxiv_retriever  # noqa: F401
+
+    from zotero_arxiv_daily.retriever.base import registered_retrievers
+
+    monkeypatch.setattr(registered_retrievers["arxiv"], "retrieve_papers", lambda self: [old_paper, new_paper])
+
+    sent = []
+    monkeypatch.setattr(smtplib, "SMTP", make_stub_smtp(sent))
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.base.sleep", lambda _: None)
+
+    executor = Executor(config)
+    executor.run()
+
+    assert len(sent) == 1
+    _, _, email_body = sent[0]
+    assert "Fresh RF Power Amplifier" in email_body
+    assert "Already Sent RF Power Amplifier" not in email_body
+
+    history = json.loads(history_path.read_text(encoding="utf-8"))
+    assert any(entry["title"] == "Fresh RF Power Amplifier" for entry in history["entries"])

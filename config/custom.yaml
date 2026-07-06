@@ -89,6 +89,10 @@ executor:
   source: ['arxiv','rf_rss']
   send_empty: true
   max_paper_num: 12
+  sent_history:
+    enabled: ${oc.env:SENT_HISTORY_ENABLED,true}
+    path: ${oc.env:SENT_HISTORY_PATH,.cache/zotero-arxiv-daily/sent_history.json}
+    max_items: 1000
   source_quotas:
     rf_rss:
       min: 4

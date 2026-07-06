@@ -5,13 +5,23 @@ from .utils import glob_match
 from .retriever import get_retriever_cls
 from .protocol import CorpusPaper, Paper, normalize_llm_base_url
 import random
-from datetime import datetime
+from datetime import datetime, timezone
+import hashlib
+import json
 import re
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 from .reranker import get_reranker_cls
 from .construct_email import render_email
 from .utils import send_email
 from openai import OpenAI
 from tqdm import tqdm
+
+
+DEFAULT_SENT_HISTORY_PATH = ".cache/zotero-arxiv-daily/sent_history.json"
+DEFAULT_SENT_HISTORY_MAX_ITEMS = 1000
+DOI_RE = re.compile(r"10\.\d{4,9}/[^\s<>\"'\?#]+", re.IGNORECASE)
+ARXIV_ID_RE = re.compile(r"(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE)
 
 
 def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key: str) -> list[str] | None:
@@ -38,6 +48,14 @@ def _config_get(config, key: str, default=None):
     return getattr(config, key, default)
 
 
+def _config_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _term_matches(text: str, term: str) -> bool:
     term = str(term or "").strip().lower()
     if not term:
@@ -45,6 +63,58 @@ def _term_matches(text: str, term: str) -> bool:
     if len(term) <= 3 and re.fullmatch(r"[a-z0-9]+", term):
         return bool(re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text))
     return term in text
+
+
+def _normalize_title_for_history(title: str | None) -> str:
+    title = re.sub(r"^\[[^\]]+\]\s*", "", str(title or ""))
+    title = re.sub(r"[\W_]+", " ", title.lower(), flags=re.UNICODE)
+    return re.sub(r"\s+", " ", title).strip()
+
+
+def _extract_doi(value: str | None) -> str | None:
+    value = unquote(str(value or ""))
+    parsed = urlparse(value)
+    candidates = [value]
+    if "doi.org" in parsed.netloc.lower() and parsed.path:
+        candidates.insert(0, parsed.path.lstrip("/"))
+    for candidate in candidates:
+        match = DOI_RE.search(candidate)
+        if match:
+            return match.group(0).rstrip(".,);]").lower()
+    return None
+
+
+def _paper_identifier_keys(paper: Paper) -> list[str]:
+    keys: list[str] = []
+
+    def add_key(key: str | None):
+        if key and key not in keys:
+            keys.append(key)
+
+    for value in (paper.url, paper.pdf_url):
+        doi = _extract_doi(value)
+        if doi:
+            add_key(f"doi:{doi}")
+            continue
+
+        value = str(value or "").strip()
+        if not value:
+            continue
+        parsed = urlparse(value)
+        normalized_path = parsed.path.rstrip("/")
+        if "arxiv.org" in parsed.netloc.lower():
+            arxiv_match = ARXIV_ID_RE.search(normalized_path)
+            if arxiv_match:
+                add_key(f"arxiv:{arxiv_match.group(1).lower()}")
+                continue
+        normalized_url = parsed._replace(query="", fragment="", path=normalized_path).geturl().lower()
+        add_key(f"url:{normalized_url}")
+
+    title_key = _normalize_title_for_history(paper.title)
+    if title_key:
+        title_hash = hashlib.sha1(title_key.encode("utf-8")).hexdigest()[:20]
+        add_key(f"title:{title_hash}")
+    return keys
 
 
 class Executor:
@@ -170,6 +240,124 @@ class Executor:
             add_paper(paper)
         return selected
 
+    def _sent_history_config(self):
+        return _config_get(self.config.executor, "sent_history", {}) or {}
+
+    def _sent_history_enabled(self) -> bool:
+        return _config_bool(_config_get(self._sent_history_config(), "enabled", False), default=False)
+
+    def _sent_history_path(self) -> Path:
+        history_path = _config_get(self._sent_history_config(), "path", DEFAULT_SENT_HISTORY_PATH)
+        return Path(str(history_path or DEFAULT_SENT_HISTORY_PATH)).expanduser()
+
+    def _sent_history_max_items(self) -> int:
+        try:
+            return max(1, int(_config_get(self._sent_history_config(), "max_items", DEFAULT_SENT_HISTORY_MAX_ITEMS)))
+        except (TypeError, ValueError):
+            return DEFAULT_SENT_HISTORY_MAX_ITEMS
+
+    def _load_sent_history(self) -> dict:
+        if not self._sent_history_enabled():
+            return {"entries": []}
+
+        history_path = self._sent_history_path()
+        if not history_path.exists():
+            return {"entries": []}
+
+        try:
+            data = json.loads(history_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(f"Failed to load sent history from {history_path}: {exc}")
+            return {"entries": []}
+
+        entries = data if isinstance(data, list) else data.get("entries", [])
+        if not isinstance(entries, list):
+            entries = []
+        return {"entries": [entry for entry in entries if isinstance(entry, dict)]}
+
+    @staticmethod
+    def _sent_history_keys(history: dict) -> set[str]:
+        keys: set[str] = set()
+        for entry in history.get("entries", []):
+            entry_keys = entry.get("keys", [])
+            if isinstance(entry_keys, str):
+                entry_keys = [entry_keys]
+            for key in entry_keys:
+                if key:
+                    keys.add(str(key))
+        return keys
+
+    def _filter_sent_papers(self, papers: list[Paper]) -> list[Paper]:
+        if not self._sent_history_enabled():
+            return papers
+
+        sent_keys = self._sent_history_keys(self._load_sent_history())
+        run_keys: set[str] = set()
+        filtered: list[Paper] = []
+        skipped_history = 0
+        skipped_run_duplicate = 0
+
+        for paper in papers:
+            keys = set(_paper_identifier_keys(paper))
+            if keys and keys.intersection(sent_keys):
+                skipped_history += 1
+                continue
+            if keys and keys.intersection(run_keys):
+                skipped_run_duplicate += 1
+                continue
+            filtered.append(paper)
+            run_keys.update(keys)
+
+        logger.info(
+            "Sent-history filter kept "
+            f"{len(filtered)}/{len(papers)} papers "
+            f"(skipped_history={skipped_history}, skipped_run_duplicate={skipped_run_duplicate})"
+        )
+        return filtered
+
+    def _record_sent_papers(self, papers: list[Paper]) -> None:
+        if not self._sent_history_enabled() or not papers:
+            return
+
+        history = self._load_sent_history()
+        entries = history.get("entries", [])
+        known_keys = self._sent_history_keys(history)
+        sent_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        added = 0
+
+        for paper in papers:
+            keys = _paper_identifier_keys(paper)
+            if not keys or known_keys.intersection(keys):
+                continue
+            entries.append(
+                {
+                    "sent_at": sent_at,
+                    "source": paper.source,
+                    "title": paper.title,
+                    "url": paper.url,
+                    "published_date": paper.published_date,
+                    "keys": keys,
+                }
+            )
+            known_keys.update(keys)
+            added += 1
+
+        if added == 0:
+            logger.info("No new sent-history entries to record")
+            return
+
+        max_items = self._sent_history_max_items()
+        history = {"entries": entries[-max_items:]}
+        history_path = self._sent_history_path()
+        try:
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = history_path.with_suffix(history_path.suffix + ".tmp")
+            tmp_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp_path.replace(history_path)
+            logger.info(f"Recorded {added} sent papers to {history_path}")
+        except Exception as exc:
+            logger.warning(f"Failed to record sent history to {history_path}: {exc}")
+
     
     def run(self):
         corpus = self.fetch_zotero_corpus()
@@ -191,6 +379,7 @@ class Executor:
             logger.info(f"Retrieved {len(papers)} {source} papers")
             all_papers.extend(papers)
         logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
+        all_papers = self._filter_sent_papers(all_papers)
         reranked_papers = []
         if len(all_papers) > 0:
             logger.info("Reranking papers...")
@@ -215,3 +404,4 @@ class Executor:
         email_content = render_email(reranked_papers)
         send_email(self.config, email_content)
         logger.info("Email sent successfully")
+        self._record_sent_papers(reranked_papers)
