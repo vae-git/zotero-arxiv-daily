@@ -3,10 +3,12 @@ from typing import Any
 import feedparser
 import re
 import requests
+from datetime import date, timedelta
 from html import unescape
 from loguru import logger
 
 from ..protocol import Paper
+from .abstract_enricher import enrich_abstract
 from .base import BaseRetriever, register_retriever
 from .date_utils import format_published_date
 
@@ -66,6 +68,9 @@ DEFAULT_RF_RSS_VENUE_INFO = {
 }
 
 CROSSREF_TIMEOUT = 30
+# Crossref 单次最多可取 1000 条，因此一次请求即可覆盖 max_entries，无需翻页。
+DEFAULT_LOOKBACK_DAYS = 120
+DEFAULT_MAX_CROSSREF_QUERY_ENTRIES = 8
 CROSSREF_NON_ARTICLE_TITLE_PATTERNS = (
     "table of contents",
     "front cover",
@@ -126,17 +131,71 @@ class RfRssRetriever(BaseRetriever):
                 return f"{year:04d}-{month:02d}-{day:02d}"
         return None
 
-    def _fetch_crossref_items(self, issn: str, rows: int, query_title: str | None = None) -> list[dict[str, Any]]:
-        params = {
-            "filter": "type:journal-article",
+    def _lookback_filter(self) -> str:
+        """Restrict Crossref results to a recent window so old issues drop out."""
+        try:
+            days = int(self.retriever_config.get("lookback_days") or DEFAULT_LOOKBACK_DAYS)
+        except (TypeError, ValueError):
+            days = DEFAULT_LOOKBACK_DAYS
+        days = max(days, 1)
+        return f"from-pub-date:{(date.today() - timedelta(days=days)).isoformat()}"
+
+    def _crossref_sources(self) -> dict[str, dict[str, Any]]:
+        """Normalise the legacy ``crossref_issn`` map and the richer ``crossref_sources``.
+
+        ``crossref_sources`` entries carry a ``kind`` telling us how to query:
+        ``journal`` (by ISSN), ``proceedings`` (by container title) or ``prefix``
+        (by DOI prefix, used for preprint servers such as TechRxiv).
+        """
+        sources: dict[str, dict[str, Any]] = {}
+        legacy_issn = self.retriever_config.get("crossref_issn") or DEFAULT_RF_CROSSREF_ISSN
+        for name, issn in dict(legacy_issn).items():
+            if issn:
+                sources[name] = {"kind": "journal", "issn": str(issn)}
+
+        for name, spec in dict(self.retriever_config.get("crossref_sources") or {}).items():
+            spec = dict(spec) if hasattr(spec, "keys") else {}
+            if spec:
+                spec.setdefault("kind", "journal")
+                sources[name] = spec
+        return sources
+
+    def _crossref_request(self, spec: dict[str, Any], rows: int, query_title: str | None) -> list[dict[str, Any]]:
+        kind = str(spec.get("kind", "journal"))
+        params: dict[str, Any] = {
             "sort": "published",
             "order": "desc",
             "rows": rows,
             "select": "DOI,URL,title,author,abstract,published,published-print,published-online,issued,created",
         }
+        filters = [self._lookback_filter()]
+
+        if kind == "journal":
+            issn = spec.get("issn")
+            if not issn:
+                return []
+            url = f"https://api.crossref.org/journals/{issn}/works"
+            filters.append("type:journal-article")
+        elif kind == "proceedings":
+            container = spec.get("container")
+            if not container:
+                return []
+            url = "https://api.crossref.org/works"
+            filters.append("type:proceedings-article")
+            params["query.container-title"] = container
+        elif kind == "prefix":
+            prefix = spec.get("prefix")
+            if not prefix:
+                return []
+            url = f"https://api.crossref.org/prefixes/{prefix}/works"
+        else:
+            logger.warning(f"Unknown Crossref source kind {kind!r}; skipping")
+            return []
+
+        params["filter"] = ",".join(filters)
         if query_title:
             params["query.title"] = query_title
-        url = f"https://api.crossref.org/journals/{issn}/works"
+
         response = requests.get(
             url,
             params=params,
@@ -146,21 +205,35 @@ class RfRssRetriever(BaseRetriever):
         response.raise_for_status()
         return response.json().get("message", {}).get("items", [])
 
-    def _retrieve_crossref_entries(self, journal: str, max_entries: int) -> list[dict[str, Any]]:
-        crossref_issn = self.retriever_config.get("crossref_issn") or DEFAULT_RF_CROSSREF_ISSN
-        issn = dict(crossref_issn).get(journal)
-        if not issn:
-            return []
+    def _fetch_crossref_items(self, issn: str, rows: int, query_title: str | None = None) -> list[dict[str, Any]]:
+        """Backwards-compatible helper for querying a journal by ISSN."""
+        return self._crossref_request({"kind": "journal", "issn": issn}, rows, query_title)
+
+    def _retrieve_crossref_entries(
+        self,
+        journal: str,
+        max_entries: int,
+        spec: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        if spec is None:
+            crossref_issn = self.retriever_config.get("crossref_issn") or DEFAULT_RF_CROSSREF_ISSN
+            issn = dict(crossref_issn).get(journal)
+            if not issn:
+                return []
+            spec = {"kind": "journal", "issn": issn}
 
         queries = list(self.retriever_config.get("crossref_queries") or DEFAULT_CROSSREF_QUERIES)
-        query_rows = int(self.retriever_config.get("max_crossref_query_entries") or 3)
+        query_rows = int(
+            self.retriever_config.get("max_crossref_query_entries") or DEFAULT_MAX_CROSSREF_QUERY_ENTRIES
+        )
         items: list[dict[str, Any]] = []
         try:
+            # 主题检索先行，保证 PA 相关论文排在候选池前面，不会被整期目录挤掉。
             for query in queries:
-                items.extend(self._fetch_crossref_items(issn, query_rows, query_title=query))
-            items.extend(self._fetch_crossref_items(issn, max_entries))
+                items.extend(self._crossref_request(spec, query_rows, query_title=query))
+            items.extend(self._crossref_request(spec, max_entries, query_title=None))
         except Exception as exc:
-            logger.warning(f"Crossref fallback failed for {journal} ({issn}): {exc}")
+            logger.warning(f"Crossref fetch failed for {journal} ({spec}): {exc}")
             return []
 
         deduped = []
@@ -185,6 +258,7 @@ class RfRssRetriever(BaseRetriever):
             max_entries_per_feed = min(max_entries_per_feed, 2)
 
         raw_papers = []
+        satisfied_by_rss: set[str] = set()
         for journal, url in dict(feeds).items():
             feed = feedparser.parse(url)
             if getattr(feed, "bozo", False):
@@ -192,14 +266,21 @@ class RfRssRetriever(BaseRetriever):
             entries = list(getattr(feed, "entries", []))[:max_entries_per_feed]
             logger.info(f"Retrieved {len(entries)} RF RSS entries from {journal}")
             if entries:
+                satisfied_by_rss.add(journal)
                 for entry in entries:
                     raw_papers.append({"journal": journal, "entry": entry, "entry_source": "rss"})
             else:
+                # IEEE 的 RSS 端点长期对自动化访问返回 418，Crossref 是常态路径而非异常路径。
                 logger.warning(
                     f"No RF RSS entries from {journal} via {url}; "
                     f"status={getattr(feed, 'status', 'unknown')}. Falling back to Crossref."
                 )
-                raw_papers.extend(self._retrieve_crossref_entries(journal, max_entries_per_feed))
+
+        # 没有被 RSS 满足的源（含没有配置 feed 的期刊/会议/预印本）统一走 Crossref。
+        for name, spec in self._crossref_sources().items():
+            if name in satisfied_by_rss:
+                continue
+            raw_papers.extend(self._retrieve_crossref_entries(name, max_entries_per_feed, spec))
         return raw_papers
 
     def convert_to_paper(self, raw_paper: dict[str, Any]) -> Paper | None:
@@ -237,6 +318,12 @@ class RfRssRetriever(BaseRetriever):
         if not title or not url:
             return None
 
+        # Crossref 不提供 IEEE 期刊的摘要，RSS 条目也常常只有标题。缺摘要会让
+        # reranker 只能对标题做 embedding，并让 TLDR 无中生有，因此先尝试补回。
+        if not summary:
+            doi = entry.get("DOI") if entry_source == "crossref" else None
+            summary = enrich_abstract(doi or url) or ""
+
         abstract = summary or f"Latest {journal} RF/microwave journal paper: {title}"
         venue, venue_rank, cas_partition, sci_quartile = self._get_venue_info(journal)
         return Paper(
@@ -244,6 +331,7 @@ class RfRssRetriever(BaseRetriever):
             title=f"[{journal}] {title}",
             authors=authors or [journal],
             abstract=abstract,
+            abstract_is_placeholder=not summary,
             url=url,
             pdf_url=url,
             full_text=None,

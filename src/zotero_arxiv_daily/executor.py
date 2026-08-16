@@ -190,14 +190,28 @@ class Executor:
             logger.info(f"Selected {len(corpus)} zotero papers:\n{samples}\n...")
         return corpus
 
+    def _focus_enabled(self) -> bool:
+        focus_config = _config_get(self.config.reranker, "focus", {}) or {}
+        return _config_bool(_config_get(focus_config, "enabled", False), default=False)
+
     def _paper_focus_match_count(self, paper: Paper) -> int:
         focus_config = _config_get(self.config.reranker, "focus", {}) or {}
         primary_keywords = _config_get(focus_config, "primary_keywords", []) or []
         text = "\n".join([paper.title or "", paper.abstract or ""]).lower()
         return sum(1 for term in primary_keywords if _term_matches(text, term))
 
-    def _source_quota_candidates(self, source: str, papers: list[Paper], quota_config) -> list[Paper]:
-        require_focus_match = bool(_config_get(quota_config, "require_focus_match", True))
+    def _source_quota_candidates(
+        self,
+        source: str,
+        papers: list[Paper],
+        quota_config,
+        require_focus_match: bool | None = None,
+    ) -> list[Paper]:
+        if require_focus_match is None:
+            require_focus_match = bool(_config_get(quota_config, "require_focus_match", True))
+        # focus 未启用时没有关键词可依据，再按关键词筛就会把该源整个清空。
+        if not self._focus_enabled():
+            require_focus_match = False
         candidates = [p for p in papers if p.source == source]
         if require_focus_match:
             candidates = [p for p in candidates if self._paper_focus_match_count(p) > 0]
@@ -238,6 +252,16 @@ class Executor:
                     break
                 if add_paper(paper):
                     source_selected += 1
+            # min 是保底名额：严格筛选凑不够时放宽 focus 限制补齐，
+            # 否则该源在关键词命中稀少的日子会直接消失。
+            if source_selected < min_count:
+                for paper in self._source_quota_candidates(
+                    source, all_papers, quota_config, require_focus_match=False
+                ):
+                    if source_selected >= min_count:
+                        break
+                    if add_paper(paper):
+                        source_selected += 1
             logger.info(f"Source quota {source}: selected {source_selected} papers (min={min_count}, max={max_count})")
 
         for paper in ranked_papers:
@@ -363,6 +387,24 @@ class Executor:
             logger.warning(f"Failed to record sent history to {history_path}: {exc}")
 
     
+    def _fetch_full_texts(self, papers: list[Paper]) -> None:
+        """Download full text only for the papers that made the final cut.
+
+        Doing this during retrieval would mean downloading a tarball or PDF for
+        every daily candidate, the vast majority of which get filtered out.
+        """
+        if not papers:
+            return
+        logger.info(f"Fetching full text for {len(papers)} selected papers...")
+        for paper in tqdm(papers, desc="Fetching full text"):
+            retriever = self.retrievers.get(paper.source)
+            if retriever is None:
+                continue
+            try:
+                paper.full_text = retriever.fetch_full_text(paper)
+            except Exception as exc:
+                logger.warning(f"Failed to fetch full text of {paper.url}: {exc}")
+
     def run(self):
         corpus = self.fetch_zotero_corpus()
         corpus = self.filter_corpus(corpus)
@@ -394,11 +436,13 @@ class Executor:
                 reranked_papers = all_papers
             reranked_papers = self._apply_source_quotas(reranked_papers, all_papers)
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
+            self._fetch_full_texts(reranked_papers)
             llm_kwargs = Paper._llm_generation_kwargs(self.config.llm)
             logger.info(f"Using LLM base_url={self.config.llm.api.base_url}, model={llm_kwargs.get('model')}")
             logger.info("Generating translated titles, TLDR and affiliations...")
             for p in tqdm(reranked_papers):
                 p.generate_title_translation(self.openai_client, self.config.llm)
+                p.generate_abstract_translation(self.openai_client, self.config.llm)
                 p.generate_tldr(self.openai_client, self.config.llm)
                 p.generate_affiliations(self.openai_client, self.config.llm)
         elif not self.config.executor.send_empty:

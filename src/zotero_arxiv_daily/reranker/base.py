@@ -13,6 +13,11 @@ DEFAULT_FOCUS_SECONDARY_BOOST = 0.04
 DEFAULT_FOCUS_AI_COMBO_BOOST = 0.35
 DEFAULT_FOCUS_MAX_BOOST = 0.9
 DEFAULT_FOCUS_NO_PRIMARY_PENALTY = 0.35
+# Tier2（领域泛化词）：命中 primary 的论文之外，射频相关但非 PA 的论文靠这一档保住排名。
+# domain-only 的取值区间刻意压在 1.0 以下，确保永远排在命中 primary 的论文之后。
+DEFAULT_FOCUS_DOMAIN_BOOST = 0.04
+DEFAULT_FOCUS_DOMAIN_ONLY_BASE = 0.8
+DEFAULT_FOCUS_DOMAIN_MAX_BOOST = 0.2
 
 
 class BaseReranker(ABC):
@@ -54,8 +59,20 @@ class BaseReranker(ABC):
         primary_matches = self._primary_focus_matches(paper, focus_config)
         secondary_matches = self._count_term_matches(text, self._focus_config_get(focus_config, "secondary_keywords", []))
         ai_matches = self._count_term_matches(text, self._focus_config_get(focus_config, "ai_keywords", []))
+        max_boost = float(self._focus_config_get(focus_config, "max_boost", DEFAULT_FOCUS_MAX_BOOST))
 
         if primary_matches == 0:
+            # 没有 PA 核心词时，先看是否属于射频泛化领域：是则轻度降权保留，否则重罚沉底。
+            domain_matches = self._count_term_matches(text, self._focus_config_get(focus_config, "domain_keywords", []))
+            if domain_matches > 0:
+                domain_base = float(self._focus_config_get(focus_config, "domain_only_base", DEFAULT_FOCUS_DOMAIN_ONLY_BASE))
+                domain_boost = domain_matches * float(
+                    self._focus_config_get(focus_config, "domain_boost_per_match", DEFAULT_FOCUS_DOMAIN_BOOST)
+                )
+                domain_max_boost = float(
+                    self._focus_config_get(focus_config, "domain_max_boost", DEFAULT_FOCUS_DOMAIN_MAX_BOOST)
+                )
+                return domain_base + min(domain_boost, domain_max_boost)
             return float(self._focus_config_get(focus_config, "no_primary_penalty", DEFAULT_FOCUS_NO_PRIMARY_PENALTY))
 
         boost = (
@@ -64,7 +81,6 @@ class BaseReranker(ABC):
         )
         if ai_matches > 0:
             boost += float(self._focus_config_get(focus_config, "ai_combo_boost", DEFAULT_FOCUS_AI_COMBO_BOOST))
-        max_boost = float(self._focus_config_get(focus_config, "max_boost", DEFAULT_FOCUS_MAX_BOOST))
         return 1.0 + min(boost, max_boost)
 
     def _primary_focus_matches(self, paper: Paper, focus_config=None) -> int:

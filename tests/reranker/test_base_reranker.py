@@ -163,3 +163,94 @@ def test_rerank_focus_can_drop_non_power_amplifier_papers():
 def test_get_reranker_cls_unknown():
     with pytest.raises(ValueError, match="not found"):
         get_reranker_cls("nonexistent_reranker_xyz")
+
+
+def _tiered_focus_config():
+    return SimpleNamespace(reranker={
+        "top_k": 1,
+        "nearest_weight": 0.7,
+        "focus": {
+            "enabled": True,
+            "primary_keywords": ["power amplifier", "doherty"],
+            "domain_keywords": ["antenna", "microwave", "mmic"],
+            "primary_boost_per_match": 0.14,
+            "domain_boost_per_match": 0.04,
+            "domain_only_base": 0.8,
+            "domain_max_boost": 0.2,
+            "no_primary_penalty": 0.35,
+            "drop_without_primary": False,
+        },
+    })
+
+
+def test_rerank_tiers_primary_above_domain_above_unrelated():
+    corpus = make_sample_corpus(1)
+    papers = [
+        make_sample_paper(title="A study of protein folding", abstract="Molecular biology."),
+        make_sample_paper(title="A microwave antenna array", abstract="An antenna for radar."),
+        make_sample_paper(title="A Doherty power amplifier", abstract="High efficiency design."),
+    ]
+    # 相似度完全相同，排序差异只能来自 focus 分档。
+    sim = np.array([[0.5], [0.5], [0.5]])
+
+    reranker = StubReranker(sim, config=_tiered_focus_config())
+    ranked = reranker.rerank(papers, corpus)
+
+    assert [p.title for p in ranked] == [
+        "A Doherty power amplifier",
+        "A microwave antenna array",
+        "A study of protein folding",
+    ]
+
+
+def test_domain_only_paper_is_kept_but_ranked_below_primary():
+    corpus = make_sample_corpus(1)
+    papers = [make_sample_paper(title="A microwave antenna array", abstract="An antenna for radar.")]
+    sim = np.array([[0.5]])
+
+    reranker = StubReranker(sim, config=_tiered_focus_config())
+    ranked = reranker.rerank(papers, corpus)
+
+    # domain-only 的倍率固定压在 1.0 以下，确保永远排在命中 primary 的论文之后。
+    assert len(ranked) == 1
+    assert ranked[0].score < 0.5 * 10
+
+
+def test_unrelated_paper_is_penalised_harder_than_domain_paper():
+    corpus = make_sample_corpus(1)
+    domain_paper = make_sample_paper(title="A microwave antenna array", abstract="An antenna.")
+    unrelated_paper = make_sample_paper(title="A study of protein folding", abstract="Biology.")
+    sim = np.array([[0.5], [0.5]])
+
+    reranker = StubReranker(sim, config=_tiered_focus_config())
+    ranked = reranker.rerank([domain_paper, unrelated_paper], corpus)
+
+    assert ranked[0].title == "A microwave antenna array"
+    assert ranked[0].score > ranked[1].score
+
+
+def test_power_allocation_paper_is_not_treated_as_power_amplifier():
+    """The bare "pa" keyword used to match "Power Allocation" in eess.SP papers."""
+    corpus = make_sample_corpus(1)
+    papers = [
+        make_sample_paper(
+            title="Robust Beamforming and Power Allocation for Cell-Free Massive MIMO",
+            abstract="We optimise PA across users to maximise throughput.",
+        ),
+    ]
+    config = SimpleNamespace(reranker={
+        "top_k": 1,
+        "focus": {
+            "enabled": True,
+            # 当前生产配置不再收录裸 "pa"。
+            "primary_keywords": ["power amplifier", "doherty", "digital predistortion"],
+            "domain_keywords": [],
+            "no_primary_penalty": 0.35,
+            "drop_without_primary": True,
+        },
+    })
+
+    sim = np.array([[0.9]])
+    reranker = StubReranker(sim, config=config)
+
+    assert reranker.rerank(papers, corpus) == []

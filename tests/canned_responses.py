@@ -14,6 +14,8 @@ _AFFILIATION_MARKER = "You are an assistant who perfectly extracts affiliations"
 _AFFILIATION_RESPONSE = '["TsingHua University","Peking University"]'
 _TITLE_TRANSLATION_MARKER = "Translate the following scientific paper title"
 _TITLE_TRANSLATION_RESPONSE = "\u6837\u4f8b\u8bba\u6587\u6807\u9898"
+_ABSTRACT_TRANSLATION_MARKER = "Translate the following scientific paper abstract"
+_ABSTRACT_TRANSLATION_RESPONSE = "\u672c\u6587\u63d0\u51fa\u4e00\u79cd\u5bbd\u5e26\u591a\u8d6b\u8482\u529f\u7387\u653e\u5927\u5668\u3002"
 _TLDR_RESPONSE = "Hello! How can I assist you today?"
 
 
@@ -38,6 +40,8 @@ def _stub_chat_create(**kwargs):
     request_str = str(messages)
     if _AFFILIATION_MARKER in request_str:
         return _make_chat_response(_AFFILIATION_RESPONSE)
+    if _ABSTRACT_TRANSLATION_MARKER in request_str:
+        return _make_chat_response(_ABSTRACT_TRANSLATION_RESPONSE)
     if _TITLE_TRANSLATION_MARKER in request_str:
         return _make_chat_response(_TITLE_TRANSLATION_RESPONSE)
     return _make_chat_response(_TLDR_RESPONSE)

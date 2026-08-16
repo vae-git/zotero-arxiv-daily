@@ -66,7 +66,7 @@ Below are all the secrets you need to set. They are invisible to anyone includin
 | SENDER_PASSWORD | The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this.   | abcdefghijklmn |
 | RECEIVER | The e-mail address that receives the paper list. | abc@outlook.com |
 | SILICONFLOW_API_KEY or OPENAI_API_KEY | SiliconFlow API key. `SILICONFLOW_API_KEY` is preferred; `OPENAI_API_KEY` is also supported. | sk-xxx |
-| SILICONFLOW_MODEL or OPENAI_MODEL | Optional SiliconFlow model name. | Qwen/Qwen2.5-7B-Instruct |
+| SILICONFLOW_MODEL or OPENAI_MODEL | Optional SiliconFlow model name. A larger model noticeably improves Chinese translation of RF terminology. | Qwen/Qwen2.5-72B-Instruct |
 
 Then edit `config/custom.yaml` in your fork and commit the change. The GitHub Action reads this checked-in file directly:
 ```yaml
@@ -87,7 +87,7 @@ llm:
     key: ${oc.env:OPENAI_API_KEY}
     base_url: https://api.siliconflow.cn/v1
   generation_kwargs:
-    model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-7B-Instruct}
+    model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-72B-Instruct}
     max_tokens: 512
     temperature: 0.2
   language: English and Chinese

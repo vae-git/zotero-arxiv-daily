@@ -23,6 +23,12 @@ source:
       T-AP: "0018-926X"
       MWTL: "2771-957X"
       JSSC: "0018-9200"
+    # Extra Crossref sources beyond the ISSN map above. Each entry needs a `kind`:
+    #   journal     -> {kind: journal, issn: "1549-8328"}
+    #   proceedings -> {kind: proceedings, container: "IEEE MTT-S International Microwave Symposium"}
+    #   prefix      -> {kind: prefix, prefix: "10.36227"}   # preprint servers, e.g. TechRxiv
+    crossref_sources: {}
+    lookback_days: 120 # Only consider Crossref records published within this many days.
     crossref_queries:
       - "RF power amplifier"
       - "power amplifier"
@@ -34,7 +40,7 @@ source:
       - "machine learning power amplifier"
       - "neural network power amplifier"
       - "power amplifier behavior modeling"
-    max_crossref_query_entries: 3
+    max_crossref_query_entries: 8
     max_entries_per_feed: 5
     venue_info:
       T-MTT:
@@ -82,12 +88,16 @@ reranker:
     enabled: false # Set true to strongly focus ranking on a domain keyword profile.
     primary_keywords: []
     secondary_keywords: []
+    domain_keywords: [] # Tier2 terms. Papers matching only these are kept with a mild penalty instead of being buried.
     ai_keywords: []
     primary_boost_per_match: 0.12
     secondary_boost_per_match: 0.04
+    domain_boost_per_match: 0.04
+    domain_only_base: 0.8 # Base multiplier when a paper matches domain_keywords but no primary_keywords. Keep below 1.0.
+    domain_max_boost: 0.2
     ai_combo_boost: 0.35
     max_boost: 0.9
-    no_primary_penalty: 0.35
+    no_primary_penalty: 0.35 # Multiplier when a paper matches neither primary_keywords nor domain_keywords.
     drop_without_primary: false
   local:
     model: jinaai/jina-embeddings-v5-text-nano-retrieval # The Hugging Face model name of the local embedding model. Example: jinaai/jina-embeddings-v5-text-nano

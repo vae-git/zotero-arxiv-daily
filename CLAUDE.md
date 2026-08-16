@@ -33,10 +33,23 @@ The app follows a linear pipeline orchestrated by `Executor` (`src/zotero_arxiv_
 
 1. **Fetch Zotero corpus** — retrieves user's library papers via pyzotero API
 2. **Filter corpus** — applies `include_path` glob patterns to select relevant collections
-3. **Retrieve new papers** — fetches from configured sources (arXiv RSS, bioRxiv/medRxiv REST API)
-4. **Rerank** — scores candidates by weighted similarity to corpus (newer Zotero papers weighted higher)
-5. **Generate TLDRs + affiliations** — via OpenAI-compatible LLM API
-6. **Render + send email** — HTML email via SMTP
+3. **Retrieve new papers** — fetches from configured sources (arXiv RSS, bioRxiv/medRxiv REST API, RF journals/conferences via Crossref)
+4. **Rerank** — scores candidates by weighted similarity to corpus (newer Zotero papers weighted higher), then applies the tiered keyword focus multiplier
+5. **Apply source quotas + truncate** to `max_paper_num`
+6. **Fetch full text** — only for the papers that survived step 5, via `BaseRetriever.fetch_full_text`
+7. **Generate translated title, translated abstract, TLDR + affiliations** — via OpenAI-compatible LLM API
+8. **Render + send email** — HTML email via SMTP
+
+### RF/PA specifics
+
+This fork is tuned for RF power amplifier literature:
+
+- **Crossref is the real path for RF journals.** IEEE's RSS endpoints return HTTP 418 to automated clients, so `rf_rss` almost always falls through to Crossref. `source.rf_rss.crossref_sources` supports three kinds: `journal` (ISSN), `proceedings` (container title) and `prefix` (DOI prefix, for preprint servers).
+- **Crossref carries no abstracts for IEEE.** `retriever/abstract_enricher.py` recovers them from OpenAlex, falling back to Semantic Scholar. Papers where recovery fails get `abstract_is_placeholder=True` and are skipped by abstract translation and email rendering.
+- **Keyword focus is tiered.** `primary_keywords` (PA core) boost, `domain_keywords` (Tier2, general RF) keep a paper alive at a multiplier below 1.0, and everything else takes `no_primary_penalty`. Do not add bare `"pa"` to `primary_keywords` — it matches "Power Allocation" in eess.SP.
+- **Translation uses a glossary.** `rf_glossary.py` injects only the RF terms that actually appear in a paper, keeping token cost proportional to jargon density.
+
+Run `python scripts/verify_crossref_sources.py` before trusting a newly added ISSN, conference or DOI prefix.
 
 ### Plugin Systems
 

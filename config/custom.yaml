@@ -15,7 +15,7 @@ llm:
     key: ${oc.env:OPENAI_API_KEY}
     base_url: https://api.siliconflow.cn/v1
   generation_kwargs:
-    model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-7B-Instruct}
+    model: ${oc.env:OPENAI_MODEL,Qwen/Qwen2.5-72B-Instruct}
     max_tokens: 512
     temperature: 0.2
   language: English and Chinese
@@ -25,7 +25,69 @@ source:
     category: ["eess.SP","cs.IT","math.IT","eess.SY","physics.app-ph"]
     include_cross_list: true
   rf_rss:
-    max_entries_per_feed: 20
+    max_entries_per_feed: 60
+    lookback_days: 120
+    max_crossref_query_entries: 8
+    # IEEE 的 RSS 端点对自动化访问返回 418，因此下列源实际都走 Crossref。
+    # 任何一个源查询失败只会记一条 warning 并跳过，不影响其余源。
+    crossref_sources:
+      T-CAS-I:
+        kind: journal
+        issn: "1549-8328"
+      T-CAS-II:
+        kind: journal
+        issn: "1549-7747"
+      JMW:
+        kind: journal
+        issn: "2692-8388"
+      T-ED:
+        kind: journal
+        issn: "0018-9383"
+      IMS:
+        kind: proceedings
+        container: "IEEE MTT-S International Microwave Symposium"
+      RFIC:
+        kind: proceedings
+        container: "IEEE Radio Frequency Integrated Circuits Symposium"
+      TechRxiv:
+        kind: prefix
+        prefix: "10.36227"
+    venue_info:
+      T-CAS-I:
+        venue: IEEE Transactions on Circuits and Systems I
+        rank: "Top circuits and systems journal / 电路与系统领域顶级期刊"
+        cas_partition: "中科院 2 区（工程技术，默认参考）"
+        sci_quartile: "JCR Q1 / SCI 一区"
+      T-CAS-II:
+        venue: IEEE Transactions on Circuits and Systems II
+        rank: "IEEE circuits and systems letters journal / IEEE 电路与系统快报期刊"
+        cas_partition: "中科院 3 区（工程技术，默认参考）"
+        sci_quartile: "JCR Q2 / SCI 二区"
+      JMW:
+        venue: IEEE Journal of Microwaves
+        rank: "IEEE microwave open-access journal / IEEE 微波开放获取期刊"
+        cas_partition: "中科院 2 区（工程技术，默认参考）"
+        sci_quartile: "JCR Q1 / SCI 一区"
+      T-ED:
+        venue: IEEE Transactions on Electron Devices
+        rank: "Top electron devices journal / 电子器件领域顶级期刊"
+        cas_partition: "中科院 2 区（工程技术，默认参考）"
+        sci_quartile: "JCR Q1 / SCI 一区"
+      IMS:
+        venue: IEEE MTT-S International Microwave Symposium
+        rank: "Top RF/microwave conference / 射频微波领域顶级会议"
+        cas_partition: "N/A / 会议论文不适用"
+        sci_quartile: "N/A / 会议论文不适用"
+      RFIC:
+        venue: IEEE Radio Frequency Integrated Circuits Symposium
+        rank: "Top RF integrated circuits conference / 射频集成电路领域顶级会议"
+        cas_partition: "N/A / 会议论文不适用"
+        sci_quartile: "N/A / 会议论文不适用"
+      TechRxiv:
+        venue: TechRxiv
+        rank: "Preprint / 预印本（未标注期刊分区）"
+        cas_partition: "N/A / 预印本不适用"
+        sci_quartile: "N/A / 预印本不适用"
 
 reranker:
   top_k: 5
@@ -40,7 +102,9 @@ reranker:
       - "millimeter-wave power amplifier"
       - "power amplifier"
       - "power amplifiers"
-      - "pa"
+      # 注意：不要把裸 "pa" 放进来。它按短词走单词边界匹配，在 eess.SP 语境下
+      # "PA" 绝大多数指 Power Allocation（功率分配），会大量误召。真正的 PA 论文
+      # 几乎必然出现 "power amplifier" 全称，因此不会漏召。
       - "digital predistortion"
       - "predistortion"
       - "dpd"
@@ -65,6 +129,49 @@ reranker:
       - "aclr"
       - "back-off"
       - "backoff"
+    # Tier2：射频泛化词。未命中 PA 核心词但属射频领域的论文靠这一档保留，
+    # 打分区间压在 1.0 以下，始终排在 PA 论文之后。
+    # 刻意不收录裸 "gan"（会误召 Generative Adversarial Network）与 "5g"/"beamforming"
+    # （会把大量偏信号处理的通信论文捞进来），改用无歧义的全称。
+    domain_keywords:
+      - "radio frequency"
+      - "rf front-end"
+      - "rf frontend"
+      - "microwave"
+      - "millimeter wave"
+      - "millimeter-wave"
+      - "mmwave"
+      - "mm-wave"
+      - "terahertz"
+      - "gallium nitride"
+      - "gan hemt"
+      - "gallium arsenide"
+      - "mmic"
+      - "hemt"
+      - "ldmos"
+      - "sige"
+      - "transceiver"
+      - "transmitter"
+      - "low noise amplifier"
+      - "lna"
+      - "mixer"
+      - "oscillator"
+      - "phase shifter"
+      - "phased array"
+      - "antenna"
+      - "impedance matching"
+      - "matching network"
+      - "load-pull"
+      - "load pull"
+      - "harmonic balance"
+      - "s-parameter"
+      - "rectifier"
+      - "wireless power transfer"
+      - "radar"
+      - "resonator"
+      - "waveguide"
+      - "microstrip"
+      - "substrate integrated"
     ai_keywords:
       - "artificial intelligence"
       - "machine learning"
@@ -79,22 +186,29 @@ reranker:
       - "physics-informed"
     primary_boost_per_match: 0.14
     secondary_boost_per_match: 0.05
+    domain_boost_per_match: 0.04
+    domain_only_base: 0.8
+    domain_max_boost: 0.2
     ai_combo_boost: 0.45
     max_boost: 1.0
     no_primary_penalty: 0.35
-    drop_without_primary: true
+    # 保持 false：置 true 会直接删除未命中 PA 核心词的候选，而 arXiv 侧每天
+    # 命中量不足 1 篇，会导致邮件几乎为空。改用上面的分档降权来保证 PA 优先。
+    drop_without_primary: false
 
 executor:
   debug: ${oc.env:DEBUG,null}
   source: ['arxiv','rf_rss']
   send_empty: true
-  max_paper_num: 12
+  max_paper_num: 20
   sent_history:
     enabled: ${oc.env:SENT_HISTORY_ENABLED,true}
     path: ${oc.env:SENT_HISTORY_PATH,.cache/zotero-arxiv-daily/sent_history.json}
     max_items: 1000
   source_quotas:
+    # rf_rss 现在是 PA 文献的主力来源（arXiv 上每天的 PA 新论文不足 1 篇），
+    # 因此给它更大的配额，剩余名额留给 arXiv。
     rf_rss:
-      min: 4
-      max: 6
+      min: 6
+      max: 14
       require_focus_match: true

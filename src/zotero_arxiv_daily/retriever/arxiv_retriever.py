@@ -9,6 +9,7 @@ import feedparser
 from tqdm import tqdm
 import multiprocessing
 import os
+import re
 from queue import Empty
 from time import sleep
 from typing import Any, Callable, TypeVar
@@ -162,11 +163,6 @@ class ArxivRetriever(BaseRetriever):
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
-        full_text = extract_text_from_tar(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_html(raw_paper)
-        if full_text is None:
-            full_text = extract_text_from_pdf(raw_paper)
         primary_category = getattr(raw_paper, "primary_category", None)
         return Paper(
             source=self.name,
@@ -175,7 +171,9 @@ class ArxivRetriever(BaseRetriever):
             abstract=abstract,
             url=raw_paper.entry_id,
             pdf_url=pdf_url,
-            full_text=full_text,
+            # \u5168\u6587\u4ea4\u7531 fetch_full_text \u5728\u6392\u5e8f\u9009\u51fa\u6700\u7ec8\u540d\u5355\u540e\u518d\u6293\uff0c\u907f\u514d\u4e3a\u5f53\u5929\u5168\u90e8
+            # \u5019\u9009\uff08\u6bcf\u5929 50~100 \u7bc7\uff0c\u5176\u4e2d\u7edd\u5927\u591a\u6570\u4f1a\u88ab\u8fc7\u6ee4\u6389\uff09\u4e0b\u8f7d tar/PDF\u3002
+            full_text=None,
             published_date=format_published_date(getattr(raw_paper, "published", None)),
             venue=f"arXiv:{primary_category}" if primary_category else "arXiv",
             venue_rank="Preprint / \u9884\u5370\u672c\uff08\u672a\u6807\u6ce8\u671f\u520a\u5206\u533a\uff09",
@@ -183,9 +181,24 @@ class ArxivRetriever(BaseRetriever):
             sci_quartile="N/A / \u9884\u5370\u672c\u4e0d\u9002\u7528",
         )
 
+    def fetch_full_text(self, paper: Paper) -> str | None:
+        full_text = extract_text_from_tar(paper)
+        if full_text is None:
+            full_text = extract_text_from_html(paper)
+        if full_text is None:
+            full_text = extract_text_from_pdf(paper)
+        return full_text
 
-def extract_text_from_html(paper: ArxivResult) -> str | None:
-    html_url = paper.entry_id.replace("/abs/", "/html/")
+
+def _arxiv_id_from_url(url: str | None) -> str | None:
+    match = re.search(r"\d{4}\.\d{4,5}(?:v\d+)?", str(url or ""))
+    return match.group(0) if match else None
+
+
+def extract_text_from_html(paper: Paper) -> str | None:
+    html_url = str(paper.url or "").replace("/abs/", "/html/")
+    if not html_url:
+        return None
     try:
         return _extract_text_from_html_worker(html_url)
     except Exception as exc:
@@ -193,8 +206,8 @@ def extract_text_from_html(paper: ArxivResult) -> str | None:
         return None
 
 
-def extract_text_from_pdf(paper: ArxivResult) -> str | None:
-    if paper.pdf_url is None:
+def extract_text_from_pdf(paper: Paper) -> str | None:
+    if not paper.pdf_url:
         logger.warning(f"No PDF URL available for {paper.title}")
         return None
     return _run_with_hard_timeout(
@@ -206,14 +219,15 @@ def extract_text_from_pdf(paper: ArxivResult) -> str | None:
     )
 
 
-def extract_text_from_tar(paper: ArxivResult) -> str | None:
-    source_url = paper.source_url()
-    if source_url is None:
-        logger.warning(f"No source URL available for {paper.title}")
+def extract_text_from_tar(paper: Paper) -> str | None:
+    arxiv_id = _arxiv_id_from_url(paper.url)
+    if arxiv_id is None:
+        logger.warning(f"No arXiv id found in {paper.url}; skip tar extraction")
         return None
+    source_url = f"https://arxiv.org/e-print/{arxiv_id}"
     return _run_with_hard_timeout(
         _extract_text_from_tar_worker,
-        (source_url, paper.entry_id, paper.title),
+        (source_url, paper.url, paper.title),
         timeout=TAR_EXTRACT_TIMEOUT,
         operation="Tar extraction",
         paper_title=paper.title,

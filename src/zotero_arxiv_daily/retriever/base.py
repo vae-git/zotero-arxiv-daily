@@ -21,6 +21,14 @@ class BaseRetriever(ABC):
     def convert_to_paper(self, raw_paper:RawPaperItem) -> Paper | None:
         pass
 
+    def fetch_full_text(self, paper:Paper) -> str | None:
+        """Fetch the paper's full text, or None when the source cannot provide one.
+
+        Called by the executor only for the papers that survive ranking, so sources
+        that need an expensive download do not pay it for every daily candidate.
+        """
+        return None
+
     def retrieve_papers(self) -> list[Paper]:
         raw_papers = self._retrieve_raw_papers()
         logger.info("Processing papers...")

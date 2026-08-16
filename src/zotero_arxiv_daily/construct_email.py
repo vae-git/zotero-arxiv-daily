@@ -57,6 +57,40 @@ def format_tldr_html(tldr: str | None) -> str:
     return escape(tldr or "").replace("\n", "<br>")
 
 
+def format_abstract_html(
+    abstract: str | None,
+    abstract_zh: str | None = None,
+    is_placeholder: bool = False,
+) -> str:
+    """Render the original abstract plus its Chinese translation.
+
+    Returns an empty string when there is nothing worth showing, so papers whose
+    source provided no real abstract simply omit the section instead of
+    displaying the internal placeholder text.
+    """
+    if is_placeholder or not abstract:
+        return ""
+
+    rows = """
+    <tr>
+        <td style="font-size: 14px; color: #333; padding: 8px 0;">
+            <strong>Abstract / 摘要:</strong><br>{abstract}
+        </td>
+    </tr>
+""".format(abstract=format_tldr_html(abstract))
+
+    if abstract_zh:
+        rows += """
+    <tr>
+        <td style="font-size: 14px; color: #333; padding: 8px 0;">
+            <strong>摘要中译:</strong><br>{abstract_zh}
+        </td>
+    </tr>
+""".format(abstract_zh=format_tldr_html(abstract_zh))
+
+    return rows
+
+
 def format_title_html(title: str, title_zh: str | None = None) -> str:
     title_html = escape(title or "")
     if title_zh:
@@ -81,9 +115,13 @@ def get_block_html(
     venue_rank: str = None,
     cas_partition: str = None,
     sci_quartile: str = None,
+    abstract: str = None,
+    abstract_zh: str = None,
+    abstract_is_placeholder: bool = False,
 ):
     title = format_title_html(title, title_zh)
     tldr = format_tldr_html(tldr)
+    abstract_rows = format_abstract_html(abstract, abstract_zh, abstract_is_placeholder)
     published_date = escape(published_date or "Unknown")
     venue = escape(venue or "Unknown")
     venue_rank = escape(venue_rank or "Unknown")
@@ -123,7 +161,7 @@ def get_block_html(
             <strong>TLDR:</strong> {tldr}
         </td>
     </tr>
-
+{abstract_rows}
     <tr>
         <td style="padding: 8px 0;">
             <a href="{pdf_url}" style="display: inline-block; text-decoration: none; font-size: 14px; font-weight: bold; color: #fff; background-color: #d9534f; padding: 8px 16px; border-radius: 4px;">PDF</a>
@@ -136,6 +174,7 @@ def get_block_html(
         authors=authors,
         rate=rate,
         tldr=tldr,
+        abstract_rows=abstract_rows,
         pdf_url=pdf_url,
         affiliations=affiliations,
         published_date=published_date,
@@ -197,6 +236,9 @@ def render_email(papers:list[Paper]) -> str:
                 p.venue_rank,
                 p.cas_partition,
                 p.sci_quartile,
+                p.abstract,
+                p.abstract_zh,
+                p.abstract_is_placeholder,
             )
         )
 

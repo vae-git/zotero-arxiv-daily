@@ -6,12 +6,20 @@ import tiktoken
 from openai import OpenAI
 from loguru import logger
 import json
+from .rf_glossary import glossary_hint_for
 RawPaperItem = TypeVar('RawPaperItem')
 
 ZH_LABEL = "\u4e2d\u6587"
 TITLE_ZH_FAILURE = "\u4e2d\u6587\u6807\u9898\u751f\u6210\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5 LLM \u914d\u7f6e\u6216\u8fd0\u884c\u65e5\u5fd7\u3002"
 DEFAULT_TLDR_MAX_TOKENS = 512
-SILICONFLOW_DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+# \u5404\u7c7b\u4efb\u52a1\u7684\u8f93\u51fa\u957f\u5ea6\u9700\u6c42\u5dee\u522b\u5f88\u5927\uff1a\u6807\u9898\u4e00\u884c\u5c31\u591f\uff0c\u800c\u6458\u8981\u7ffb\u8bd1\u4e00\u65e6\u88ab\u622a\u65ad\u5c31\u6beb\u65e0\u4ef7\u503c\u3002
+TASK_MAX_TOKENS = {
+    "title": 256,
+    "tldr": DEFAULT_TLDR_MAX_TOKENS,
+    "abstract": 1536,
+    "affiliations": 512,
+}
+SILICONFLOW_DEFAULT_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 
 
 def normalize_llm_base_url(base_url: str | None) -> str:
@@ -21,11 +29,15 @@ def normalize_llm_base_url(base_url: str | None) -> str:
     return base_url
 
 
-def wants_bilingual_tldr(language: str) -> bool:
+def wants_chinese(language: str) -> bool:
     language = str(language or "").lower()
-    has_english = "english" in language or "\u82f1\u6587" in language or "\u82f1" in language
-    has_chinese = "chinese" in language or "\u4e2d\u6587" in language or "\u4e2d" in language or "zh" in language
-    return has_english and has_chinese
+    return "chinese" in language or "\u4e2d\u6587" in language or "\u4e2d" in language or "zh" in language
+
+
+def wants_bilingual_tldr(language: str) -> bool:
+    language_lower = str(language or "").lower()
+    has_english = "english" in language_lower or "\u82f1\u6587" in language_lower or "\u82f1" in language_lower
+    return has_english and wants_chinese(language)
 
 
 def contains_chinese(text: str | None) -> bool:
@@ -41,6 +53,7 @@ class Paper:
     pdf_url: Optional[str] = None
     full_text: Optional[str] = None
     title_zh: Optional[str] = None
+    abstract_zh: Optional[str] = None
     tldr: Optional[str] = None
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
@@ -49,6 +62,8 @@ class Paper:
     venue_rank: Optional[str] = None
     cas_partition: Optional[str] = None
     sci_quartile: Optional[str] = None
+    # 检索源拿不到真实摘要时会填入占位文案。翻译和邮件渲染都应跳过这类内容。
+    abstract_is_placeholder: bool = False
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')
@@ -61,6 +76,11 @@ class Paper:
             )
         else:
             prompt = f"Given the following information of a paper, generate a one-sentence TLDR summary in {lang}:\n\n"
+
+        # 术语表放在最前面：下面的 tiktoken 截断会砍掉尾部，全文预览可以丢，术语约束不能丢。
+        if wants_chinese(lang):
+            prompt += glossary_hint_for(self.title, self.abstract)
+
         if self.title:
             prompt += f"Title:\n {self.title}\n\n"
 
@@ -88,7 +108,7 @@ class Paper:
                 },
                 {"role": "user", "content": prompt},
             ],
-            **self._llm_generation_kwargs(llm_params)
+            **self._llm_generation_kwargs(llm_params, task="tldr")
         )
         tldr = response.choices[0].message.content
         if wants_bilingual_tldr(lang) and not self._has_bilingual_tldr(tldr):
@@ -113,7 +133,7 @@ class Paper:
         return getattr(config, key, default)
 
     @staticmethod
-    def _llm_generation_kwargs(llm_params: dict) -> dict:
+    def _llm_generation_kwargs(llm_params: dict, task: str = "tldr") -> dict:
         kwargs = dict(Paper._config_get(llm_params, "generation_kwargs", {}) or {})
         api_config = Paper._config_get(llm_params, "api", {}) or {}
         base_url = normalize_llm_base_url(Paper._config_get(api_config, "base_url", "")).lower()
@@ -121,14 +141,17 @@ class Paper:
         if kwargs.get("model") == "gpt-4o-mini" and "siliconflow" in base_url:
             kwargs["model"] = SILICONFLOW_DEFAULT_MODEL
 
-        try:
-            max_tokens = int(kwargs.get("max_tokens", DEFAULT_TLDR_MAX_TOKENS))
-        except (TypeError, ValueError):
-            max_tokens = DEFAULT_TLDR_MAX_TOKENS
-        if max_tokens > DEFAULT_TLDR_MAX_TOKENS:
-            kwargs["max_tokens"] = DEFAULT_TLDR_MAX_TOKENS
+        # 配置里的 max_tokens 被当作 TLDR 的预算；其余任务用各自的默认值，
+        # 否则摘要翻译会被压在 512 token 而中途截断。
+        task_default = TASK_MAX_TOKENS.get(task, DEFAULT_TLDR_MAX_TOKENS)
+        if task == "tldr":
+            try:
+                configured = int(kwargs.get("max_tokens", task_default))
+            except (TypeError, ValueError):
+                configured = task_default
+            kwargs["max_tokens"] = min(configured, task_default)
         else:
-            kwargs["max_tokens"] = max_tokens
+            kwargs["max_tokens"] = task_default
 
         return kwargs
 
@@ -171,7 +194,7 @@ class Paper:
                     {"role": "system", "content": self._tldr_system_prompt("English and Chinese")},
                     {"role": "user", "content": prompt},
                 ],
-                **self._llm_generation_kwargs(llm_params)
+                **self._llm_generation_kwargs(llm_params, task="tldr")
             )
         except Exception as e:
             logger.warning(f"Failed to repair bilingual tldr of {self.url}: {e}")
@@ -207,7 +230,8 @@ class Paper:
             "Return only the translated title in Simplified Chinese. The answer must contain Chinese characters.\n"
             "Do not add quotes, labels, explanations, or markdown.\n"
             "Preserve technical acronyms, formulas, model names, journal abbreviations, and proper nouns when appropriate.\n\n"
-            f"Title:\n{self.title}"
+            f"{glossary_hint_for(self.title)}"
+            f"\nTitle:\n{self.title}"
         )
         response = openai_client.chat.completions.create(
             messages=[
@@ -215,12 +239,13 @@ class Paper:
                     "role": "system",
                     "content": (
                         "You translate scientific paper titles accurately into concise Simplified Chinese. "
+                        "You are familiar with RF and microwave engineering terminology. "
                         "Return only the Chinese title."
                     ),
                 },
                 {"role": "user", "content": prompt},
             ],
-            **self._llm_generation_kwargs(llm_params)
+            **self._llm_generation_kwargs(llm_params, task="title")
         )
         return self._clean_title_translation(response.choices[0].message.content)
 
@@ -241,7 +266,7 @@ class Paper:
                 },
                 {"role": "user", "content": prompt},
             ],
-            **self._llm_generation_kwargs(llm_params)
+            **self._llm_generation_kwargs(llm_params, task="title")
         )
         return self._clean_title_translation(response.choices[0].message.content)
 
@@ -257,6 +282,63 @@ class Paper:
             logger.warning(f"Failed to translate title of {self.url}: {safe_error}")
             self.title_zh = f"{TITLE_ZH_FAILURE} Error: {safe_error}"
             return None
+
+    @staticmethod
+    def _clean_abstract_translation(text: str) -> str:
+        text = (text or "").strip()
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+        label_pattern = (
+            # 长标签排在短标签前面，避免依赖正则回溯（"中文摘要" 必须先于 "中文" 尝试）。
+            r"^(?:Simplified Chinese|Chinese abstract|Translated abstract|Translation|Chinese|"
+            r"中文摘要|中文翻译|中文|译文|翻译|摘要)"
+            r"\s*[:：]\s*"
+        )
+        text = re.sub(label_pattern, "", text.strip(), flags=re.IGNORECASE)
+        return text.strip()
+
+    def _generate_abstract_translation_with_llm(self, openai_client:OpenAI, llm_params:dict) -> str:
+        if not self.abstract or self.abstract_is_placeholder:
+            return ""
+        if contains_chinese(self.abstract):
+            return self.abstract
+
+        prompt = (
+            "Translate the following scientific paper abstract into Simplified Chinese.\n"
+            "Requirements:\n"
+            "- Translate the abstract in full. Do not summarize, condense, or omit sentences.\n"
+            "- Return only the Chinese translation: no labels, no markdown, no commentary.\n"
+            "- Keep numbers, units, frequency bands, device models, formulas and acronyms exactly as written.\n\n"
+            f"{glossary_hint_for(self.title, self.abstract)}"
+            f"\nAbstract:\n{self.abstract}"
+        )
+        response = openai_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a translator specialized in RF, microwave and integrated circuit papers. "
+                        "You translate abstracts into accurate, fluent Simplified Chinese and return nothing else."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            **self._llm_generation_kwargs(llm_params, task="abstract")
+        )
+        return self._clean_abstract_translation(response.choices[0].message.content)
+
+    def generate_abstract_translation(self, openai_client:OpenAI, llm_params:dict) -> Optional[str]:
+        """Translate the abstract into Chinese. Non-fatal: returns ``None`` on failure."""
+        try:
+            abstract_zh = self._generate_abstract_translation_with_llm(openai_client, llm_params)
+        except Exception as e:
+            safe_error = self._safe_error_message(e)
+            logger.warning(f"Failed to translate abstract of {self.url}: {safe_error}")
+            self.abstract_zh = None
+            return None
+
+        self.abstract_zh = abstract_zh if contains_chinese(abstract_zh) else None
+        return self.abstract_zh
     
     def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
         try:
@@ -292,7 +374,7 @@ class Paper:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                **self._llm_generation_kwargs(llm_params)
+                **self._llm_generation_kwargs(llm_params, task="affiliations")
             )
             affiliations = affiliations.choices[0].message.content
 
