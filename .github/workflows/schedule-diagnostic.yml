@@ -2,7 +2,7 @@ name: Temporary schedule diagnostic
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '3-58/5 * * * *'
 permissions: {}
 jobs:
   observe-trigger:
